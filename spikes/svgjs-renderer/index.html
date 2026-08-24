@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="NCV-1 technology spike for curved permutation diagrams rendered with SVG.js"
+    />
+    <title>NCV-1 SVG.js renderer spike</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="heading">
+        <p class="eyebrow">NCV-1 renderer spike</p>
+        <h1>Curved permutation diagrams</h1>
+        <p>Interactive SVG geometry that exports exactly what it renders.</p>
+      </header>
+
+      <section class="toolbar" aria-label="Diagram controls">
+        <label>
+          Example
+          <select id="example-select"></select>
+        </label>
+        <label class="check-control">
+          <input id="direction-toggle" type="checkbox" />
+          Show direction
+        </label>
+        <button id="export-button" type="button">Export SVG</button>
+        <button id="clear-button" class="quiet" type="button">Clear selection</button>
+      </section>
+
+      <section class="workspace">
+        <div id="figure" class="figure" aria-label="Permutation diagram"></div>
+        <aside class="metadata" aria-live="polite">
+          <span class="metadata-label">Selected edge</span>
+          <output id="selection-output">None</output>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

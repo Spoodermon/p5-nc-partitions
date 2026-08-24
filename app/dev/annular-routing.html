@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Annular routing laboratory</title>
+  </head>
+  <body>
+    <main class="lab-shell">
+      <header>
+        <p class="eyebrow">NCV-5 developer laboratory</p>
+        <h1>Global annular routing</h1>
+        <p>Complete permutations, coordinated lifts, lanes, and clearance diagnostics.</p>
+      </header>
+      <section class="controls" aria-label="Routing laboratory controls">
+        <label>Fixture <select id="fixture"></select></label>
+        <label class="check"><input id="directions" type="checkbox" checked /> Direction</label>
+        <label class="check"><input id="diagnostics" type="checkbox" /> Diagnostics</label>
+      </section>
+      <section class="lab-card">
+        <div id="annular-routing-lab" class="lab-figure"></div>
+        <div id="summary" class="summary" aria-live="polite"></div>
+      </section>
+    </main>
+    <script type="module" src="/src/dev/annularRoutingLab.ts"></script>
+  </body>
+</html>

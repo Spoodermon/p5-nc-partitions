@@ -69,7 +69,7 @@ disconnected:  #(τ) + #(K_{p,q}(τ)) = p + q + 2
 
 The inner mathematical cycle remains `(p+1 … p+q)`. A future renderer may place inner labels in the opposite screen-angular orientation, but that layout choice must not reverse the mathematical permutation.
 
-Annular mathematics is available only in the independently tested core. Annular rendering and annular UI are not yet exposed.
+Annular mathematics and global routing are available as independently tested modules. Annular rendering is still not exposed in the production UI.
 
 ## Annular geometry foundation
 
@@ -105,7 +105,23 @@ r(u) = Rin (Rout / Rin)^u
 
 Supported individual route primitives are `outer-outer`, `inner-inner`, `through`, `outer-singleton`, and `inner-singleton`. Routes accept an explicit winding/lift integer, radial excursion, and angular bias; they provide deterministic point and tangent evaluation plus sampling. Singleton routes are renderer-only local loops and do not change the underlying fixed-point permutation.
 
-**NCV-4 defines individual routes. It does not choose globally compatible collision-free routes for a permutation.** Permutation-aware phase selection, lift selection, lane assignment, bias coordination, collision avoidance, and clearance verification belong to the later global-routing stage. The laboratory's dense sampled SVG paths visualize the smooth analytical route family without fixing the future production path representation.
+The NCV-4 laboratory's dense sampled SVG paths visualize the smooth analytical route family without fixing the future production path representation.
+
+## Global annular routing
+
+The complete-permutation routing laboratory is available at:
+
+```text
+/dev/annular-routing.html
+```
+
+The NCV-5 router first rejects input that is not mathematically annular-noncrossing. It extracts every directed cycle edge, searches 10 deterministic phase candidates over `[0, 2π/lcm(p,q))` (including `δ₀`), builds bounded candidate sets, and assigns them with deterministic backtracking. Same-boundary candidates use explicit excursion lanes; return edges prefer deeper lanes. Through candidates use bounded angular-bias families, and opposite directed edges in a two-cycle receive paired biases. Every non-singleton candidate uses a winding from `{-1,0,1}`; equivalent route plans are anchored to the NCV-4 layout angles, so no arbitrary global deck translation enters serialization.
+
+Candidate pairs are checked with 49 deterministic samples per analytical route. The detector uses proper segment intersection and segment-to-segment minimum distance, including coincident regions. A radius-48 neighbourhood is ignored only around a shared mathematical endpoint; checking resumes immediately outside it. The default hard clearance is `0.1` viewBox units in the fixed `1000 × 1000` coordinate system and is independent of display pixels. Label proximity is reported as a soft warning.
+
+Search is bounded to 140 candidates per edge and 10,000 nodes per phase by default. A valid mathematical permutation that exhausts this finite search returns `search-limit-exceeded` or `no-collision-free-routing`; it is never reclassified as mathematically invalid and is never drawn with intersecting or straight-chord fallbacks. Route-plan serialization and all tie-breaking are deterministic.
+
+NCV-5 is awaiting human visual sign-off. The production disc page, disc renderer, selection behaviour, and disc SVG export remain unchanged; production annular UI and export are deferred to NCV-6.
 
 ## Renderer
 
@@ -119,4 +135,4 @@ The download icon serializes the current live SVG DOM. Export preserves the curr
 
 ## Known limitations
 
-The application does not yet solve permutation-aware annular phase selection, automatic winding/lift choice, globally compatible lane routing, collision/clearance verification, production annular UI or SVG export, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, or the final scene architecture.
+The bounded router may report failure for larger annular permutations outside the exhaustive admission range. The application still has no production annular UI or annular SVG export, publication-recipe format, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, or final scene architecture. NCV-5 routing is not yet visually approved by the user.

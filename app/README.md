@@ -71,6 +71,42 @@ The inner mathematical cycle remains `(p+1 … p+q)`. A future renderer may plac
 
 Annular mathematics is available only in the independently tested core. Annular rendering and annular UI are not yet exposed.
 
+## Annular geometry foundation
+
+The isolated developer laboratory is available during development at:
+
+```text
+/dev/annular-geometry.html
+```
+
+It uses the canonical `0 0 1000 1000` coordinate system with centre `(500,500)`, outer radius `370`, and inner radius `170`. Outer labels increase clockwise:
+
+```text
+θout(i) = -π/2 + 2π(i-1)/p
+```
+
+Inner labels increase counterclockwise on screen without changing their mathematical permutation order:
+
+```text
+θin(p+j) = -π/2 + δ - 2π(j-1)/q
+```
+
+The permutation-independent default phase is the half-step between exact radial-alignment phases:
+
+```text
+δ₀(p,q) = π / lcm(p,q)
+```
+
+The geometry kernel uses logarithmic universal-cover coordinates `(θ,u)`, retaining unwrapped `θ` values and an explicit integer lift. Cover height `u=0` is the inner boundary and `u=1` is the outer boundary:
+
+```text
+r(u) = Rin (Rout / Rin)^u
+```
+
+Supported individual route primitives are `outer-outer`, `inner-inner`, `through`, `outer-singleton`, and `inner-singleton`. Routes accept an explicit winding/lift integer, radial excursion, and angular bias; they provide deterministic point and tangent evaluation plus sampling. Singleton routes are renderer-only local loops and do not change the underlying fixed-point permutation.
+
+**NCV-4 defines individual routes. It does not choose globally compatible collision-free routes for a permutation.** Permutation-aware phase selection, lift selection, lane assignment, bias coordination, collision avoidance, and clearance verification belong to the later global-routing stage. The laboratory's dense sampled SVG paths visualize the smooth analytical route family without fixing the future production path representation.
+
 ## Renderer
 
 The application lays out vertices deterministically in a `0 0 1000 1000` SVG viewBox and renders permutation relations as cubic Bézier arcs. Forward and return roles have distinct depth, two-cycles form a lens, singleton fixed points receive a restrained presentation loop, and optional direction markers appear at curve midpoints.
@@ -83,4 +119,4 @@ The download icon serializes the current live SVG DOM. Export preserves the curr
 
 ## Known limitations
 
-The application does not yet solve annular geometry/UI, inner phase placement, winding/lift geometry, general collision-free lane routing, intersection/clearance verification, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, or the final scene architecture.
+The application does not yet solve permutation-aware annular phase selection, automatic winding/lift choice, globally compatible lane routing, collision/clearance verification, production annular UI or SVG export, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, or the final scene architecture.

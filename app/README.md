@@ -18,7 +18,9 @@ npm run build
 npm run preview
 ```
 
-## Mathematical input
+## Mathematical conventions
+
+### Disc input
 
 Input denotes a **set partition**, not an oriented permutation. Blocks use parenthesized, whitespace-separated positive labels, for example:
 
@@ -40,6 +42,35 @@ K(π) = π⁻¹γₙ
 
 Invalid syntax, duplicate or missing support, and crossing partitions are reported without replacing the last valid figure.
 
+### Annular core
+
+Annular data denotes an **actual permutation**, not a set partition. Orientation is therefore retained:
+
+```text
+(1 2 3) ≠ (1 3 2)
+```
+
+Cyclic rotations such as `(1 3 2)`, `(3 2 1)`, and `(2 1 3)` denote the same cycle. Disjoint-cycle order is immaterial, and omitted labels are inferred as fixed points because `p` and `q` determine the complete support `[1,p+q]`.
+
+The outer and inner mathematical label sets are:
+
+```text
+E = {1,…,p}
+I = {p+1,…,p+q}
+γ_{p,q} = (1 … p)(p+1 … p+q)
+```
+
+A cycle is `outer`, `inner`, or `through` according to the boundary sets containing its labels. The permutation is connected exactly when it has a through-cycle. With `K_{p,q}(τ) = τ⁻¹γ_{p,q}`, annular noncrossing validity uses the cycle-count geodesic equalities:
+
+```text
+connected:     #(τ) + #(K_{p,q}(τ)) = p + q
+disconnected:  #(τ) + #(K_{p,q}(τ)) = p + q + 2
+```
+
+The inner mathematical cycle remains `(p+1 … p+q)`. A future renderer may place inner labels in the opposite screen-angular orientation, but that layout choice must not reverse the mathematical permutation.
+
+Annular mathematics is available only in the independently tested core. Annular rendering and annular UI are not yet exposed.
+
 ## Renderer
 
 The application lays out vertices deterministically in a `0 0 1000 1000` SVG viewBox and renders permutation relations as cubic Bézier arcs. Forward and return roles have distinct depth, two-cycles form a lens, singleton fixed points receive a restrained presentation loop, and optional direction markers appear at curve midpoints.
@@ -52,4 +83,4 @@ The download icon serializes the current live SVG DOM. Export preserves the curr
 
 ## Known limitations
 
-The application does not yet solve general collision-free lane routing, intersection/clearance verification, annular mathematics or geometry, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, or the final scene architecture.
+The application does not yet solve annular geometry/UI, inner phase placement, winding/lift geometry, general collision-free lane routing, intersection/clearance verification, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, or the final scene architecture.

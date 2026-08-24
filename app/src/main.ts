@@ -1,8 +1,18 @@
 import "./style.css";
-import { EXAMPLES, getExample, type ExampleId } from "./ui/examples";
-import { downloadSvg } from "./renderer/export";
-import { renderDiagram } from "./renderer/svgRenderer";
 import type { DirectedEdge } from "./geometry/disc";
+import {
+  krewerasComplement,
+  mathErrorMessage,
+  parseNoncrossingPartition,
+  partitionToString,
+  type DiscPartition,
+} from "./math";
+import { downloadSvg } from "./renderer/export";
+import { partitionDiagram } from "./renderer/model";
+import { renderDiagram } from "./renderer/svgRenderer";
+import { EXAMPLES, getExample } from "./ui/examples";
+
+type DisplayMode = "partition" | "kreweras";
 
 const figure = requireElement<HTMLDivElement>("figure");
 const exampleSelect = requireElement<HTMLSelectElement>("example-select");
@@ -10,8 +20,13 @@ const directionToggle = requireElement<HTMLInputElement>("direction-toggle");
 const exportButton = requireElement<HTMLButtonElement>("export-button");
 const clearButton = requireElement<HTMLButtonElement>("clear-button");
 const selectionOutput = requireElement<HTMLOutputElement>("selection-output");
+const partitionForm = requireElement<HTMLFormElement>("partition-form");
+const partitionInput = requireElement<HTMLInputElement>("partition-input");
+const partitionMessage = requireElement<HTMLParagraphElement>("partition-message");
+const displayModeControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
 
-let selectedExampleId: ExampleId = "two-cycle";
+let sourcePartition = requiredPartition(getExample("two-cycle").notation);
+let displayMode: DisplayMode = "partition";
 let selectedEdge: DirectedEdge | null = null;
 let currentSvg: SVGSVGElement | null = null;
 
@@ -19,6 +34,16 @@ function requireElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing required element #${id}`);
   return element as T;
+}
+
+function requiredPartition(input: string): DiscPartition {
+  const result = parseNoncrossingPartition(input);
+  if (!result.ok) throw new Error(`Invalid built-in example: ${result.error.kind}`);
+  return result.value;
+}
+
+function displayedPartition(): DiscPartition {
+  return displayMode === "partition" ? sourcePartition : krewerasComplement(sourcePartition);
 }
 
 function edgeMetadata(edge: DirectedEdge | null): string {
@@ -31,11 +56,16 @@ function updateSelection(edge: DirectedEdge | null): void {
   clearButton.disabled = edge === null;
 }
 
+function updatePartitionMessage(): void {
+  const prefix = displayMode === "partition" ? "π" : "Kr(π)";
+  partitionMessage.dataset.state = "valid";
+  partitionMessage.textContent = `${prefix} = ${partitionToString(displayedPartition())}`;
+}
+
 function redraw(): void {
-  const example = getExample(selectedExampleId);
   const rendered = renderDiagram(
     figure,
-    example,
+    partitionDiagram(displayedPartition()),
     { showDirection: directionToggle.checked, selectedEdgeId: selectedEdge?.id ?? null },
     {
       onSelect: (edge) => {
@@ -46,6 +76,23 @@ function redraw(): void {
     },
   );
   currentSvg = rendered.svg;
+  updatePartitionMessage();
+}
+
+function acceptPartitionInput(input: string): boolean {
+  const result = parseNoncrossingPartition(input);
+  if (!result.ok) {
+    partitionMessage.dataset.state = "error";
+    partitionMessage.textContent = mathErrorMessage(result.error);
+    return false;
+  }
+
+  sourcePartition = result.value;
+  partitionInput.value = partitionToString(sourcePartition);
+  selectedEdge = null;
+  updateSelection(null);
+  redraw();
+  return true;
 }
 
 EXAMPLES.forEach((example) => {
@@ -55,12 +102,27 @@ EXAMPLES.forEach((example) => {
   exampleSelect.append(option);
 });
 
-exampleSelect.value = selectedExampleId;
+exampleSelect.value = "two-cycle";
+partitionInput.value = partitionToString(sourcePartition);
 exampleSelect.addEventListener("change", () => {
-  selectedExampleId = exampleSelect.value as ExampleId;
-  selectedEdge = null;
-  updateSelection(null);
-  redraw();
+  const example = getExample(exampleSelect.value);
+  partitionInput.value = example.notation;
+  acceptPartitionInput(example.notation);
+});
+
+partitionForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  acceptPartitionInput(partitionInput.value);
+});
+
+displayModeControls.forEach((control) => {
+  control.addEventListener("change", () => {
+    if (!control.checked) return;
+    displayMode = control.value as DisplayMode;
+    selectedEdge = null;
+    updateSelection(null);
+    redraw();
+  });
 });
 
 directionToggle.addEventListener("change", redraw);
@@ -71,7 +133,8 @@ clearButton.addEventListener("click", () => {
 });
 exportButton.addEventListener("click", () => {
   if (!currentSvg) return;
-  downloadSvg(currentSvg, `permutation-${selectedExampleId}.svg`);
+  downloadSvg(currentSvg, `disc-partition-${displayMode}-${sourcePartition.n}.svg`);
 });
 
+updateSelection(null);
 redraw();

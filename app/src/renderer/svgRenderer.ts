@@ -1,5 +1,5 @@
 import { SVG, type Marker, type Path, type Svg } from "@svgdotjs/svg.js";
-import type { DiagramExample } from "../ui/examples";
+import type { DiagramModel } from "../geometry/types";
 import {
   DISC_CENTER,
   DISC_RADIUS,
@@ -51,7 +51,7 @@ function labelEdge(path: Path, edge: DirectedEdge): void {
 
 export function renderDiagram(
   container: HTMLElement,
-  example: DiagramExample,
+  example: DiagramModel,
   options: RenderOptions,
   callbacks: RenderCallbacks,
 ): RenderResult {

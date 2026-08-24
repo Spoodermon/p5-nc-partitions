@@ -1,4 +1,4 @@
-import type { Cycle, DiagramExample } from "../ui/examples";
+import type { DiagramModel, RenderCycle } from "./types";
 
 export const VIEWBOX_SIZE = 1000;
 export const DISC_CENTER = { x: 500, y: 500 } as const;
@@ -20,7 +20,7 @@ export type EdgeRole = "forward" | "return" | "singleton";
 export interface DirectedEdge {
   readonly id: string;
   readonly cycleIndex: number;
-  readonly cycle: Cycle;
+  readonly cycle: RenderCycle;
   readonly start: number;
   readonly end: number;
   readonly role: EdgeRole;
@@ -108,7 +108,7 @@ export function layoutVertices(vertexCount: number): readonly Vertex[] {
   });
 }
 
-export function buildEdges(example: DiagramExample): readonly DirectedEdge[] {
+export function buildEdges(example: DiagramModel): readonly DirectedEdge[] {
   const edges: DirectedEdge[] = [];
 
   example.cycles.forEach((cycle, cycleIndex) => {
@@ -148,7 +148,7 @@ export function buildEdges(example: DiagramExample): readonly DirectedEdge[] {
   return edges;
 }
 
-export function createDiscLayout(example: DiagramExample): DiscLayout {
+export function createDiscLayout(example: DiagramModel): DiscLayout {
   return {
     vertices: layoutVertices(example.vertexCount),
     edges: buildEdges(example),

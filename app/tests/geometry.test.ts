@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { getExample } from "../src/ui/examples";
 import { arcDepth, createDiscLayout, makeDiscArc } from "../src/geometry/disc";
+import { parseDiscPartition } from "../src/math/parser";
+import { partitionDiagram } from "../src/renderer/model";
+
+function exampleDiagram(id: string) {
+  const example = getExample(id);
+  const parsed = parseDiscPartition(example.notation);
+  if (!parsed.ok) throw new Error(parsed.error.kind);
+  return partitionDiagram(parsed.value);
+}
 
 describe("curved edge grammar", () => {
   it("creates two distinct curved paths for the two-cycle", () => {
-    const example = getExample("two-cycle");
+    const example = exampleDiagram("two-cycle");
     const layout = createDiscLayout(example);
     expect(layout.edges).toHaveLength(2);
 
@@ -19,7 +28,7 @@ describe("curved edge grammar", () => {
   });
 
   it("classifies exactly one deeper return edge for the three-cycle", () => {
-    const example = getExample("three-cycle");
+    const example = exampleDiagram("three-cycle");
     const layout = createDiscLayout(example);
     const returns = layout.edges.filter((edge) => edge.role === "return");
     const forwards = layout.edges.filter((edge) => edge.role === "forward");
@@ -33,7 +42,7 @@ describe("curved edge grammar", () => {
   });
 
   it("renders singleton blocks as restrained closed loops", () => {
-    const example = getExample("representative");
+    const example = exampleDiagram("representative");
     const layout = createDiscLayout(example);
     const singleton = layout.edges.find((edge) => edge.role === "singleton");
     expect(singleton).toBeDefined();

@@ -32,7 +32,7 @@ npm run preview
 - `(1 4)(2 3)`
 - `(1 4)(2 3)(5 7 8 12)(6)(9 10 11)`
 
-Examples are trusted static cycle arrays. Singleton cycles render as a point only.
+Examples are trusted static cycle arrays. Singleton cycles render as restrained local loops.
 
 ## Rendering and export
 

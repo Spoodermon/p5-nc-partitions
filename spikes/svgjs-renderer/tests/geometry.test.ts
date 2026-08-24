@@ -31,4 +31,20 @@ describe("curved edge grammar", () => {
       Math.max(...forwards.map((edge) => arcDepth(edge, example.vertexCount))),
     );
   });
+
+  it("renders singleton blocks as restrained closed loops", () => {
+    const example = getExample("representative");
+    const layout = createDiscLayout(example);
+    const singleton = layout.edges.find((edge) => edge.role === "singleton");
+    expect(singleton).toBeDefined();
+
+    const vertex = layout.vertices[(singleton?.start ?? 1) - 1];
+    if (!singleton || !vertex) throw new Error("Missing singleton test geometry");
+    const geometry = makeDiscArc(vertex, vertex, singleton, example.vertexCount);
+
+    expect(singleton.start).toBe(6);
+    expect(singleton.end).toBe(6);
+    expect(geometry.depth).toBe(54);
+    expect(geometry.path.match(/\bC\b/g)).toHaveLength(2);
+  });
 });

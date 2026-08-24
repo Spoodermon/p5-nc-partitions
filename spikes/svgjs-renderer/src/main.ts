@@ -22,8 +22,13 @@ function requireElement<T extends HTMLElement>(id: string): T {
 }
 
 function edgeMetadata(edge: DirectedEdge | null): string {
-  if (!edge) return "None";
+  if (!edge) return "No edge selected";
   return `cycle: (${edge.cycle.join(" ")}) · edge: ${edge.start} → ${edge.end} · role: ${edge.role}`;
+}
+
+function updateSelection(edge: DirectedEdge | null): void {
+  selectionOutput.value = edgeMetadata(edge);
+  clearButton.disabled = edge === null;
 }
 
 function redraw(): void {
@@ -35,7 +40,7 @@ function redraw(): void {
     {
       onSelect: (edge) => {
         selectedEdge = edge;
-        selectionOutput.value = edgeMetadata(edge);
+        updateSelection(edge);
         redraw();
       },
     },
@@ -54,14 +59,14 @@ exampleSelect.value = selectedExampleId;
 exampleSelect.addEventListener("change", () => {
   selectedExampleId = exampleSelect.value as ExampleId;
   selectedEdge = null;
-  selectionOutput.value = edgeMetadata(null);
+  updateSelection(null);
   redraw();
 });
 
 directionToggle.addEventListener("change", redraw);
 clearButton.addEventListener("click", () => {
   selectedEdge = null;
-  selectionOutput.value = edgeMetadata(null);
+  updateSelection(null);
   redraw();
 });
 exportButton.addEventListener("click", () => {

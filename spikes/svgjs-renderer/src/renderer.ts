@@ -96,7 +96,7 @@ export function renderDiagram(
       .attr({ "data-edge-id": edge.id, "data-depth": geometry.depth });
 
     labelEdge(path, edge);
-    if (options.showDirection) path.marker("end", arrowMarker);
+    if (options.showDirection) path.marker("mid", arrowMarker);
     if (options.selectedEdgeId === edge.id) path.addClass("is-selected");
 
     path.on("mouseenter", () => path.addClass("is-hovered"));

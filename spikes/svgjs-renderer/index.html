@@ -12,30 +12,37 @@
   <body>
     <main class="shell">
       <header class="heading">
-        <p class="eyebrow">NCV-1 renderer spike</p>
         <h1>Curved permutation diagrams</h1>
-        <p>Interactive SVG geometry that exports exactly what it renders.</p>
       </header>
 
       <section class="toolbar" aria-label="Diagram controls">
-        <label>
+        <label class="example-control">
           Example
           <select id="example-select"></select>
         </label>
+        <div class="selection-summary" aria-live="polite">
+          <output id="selection-output">No edge selected</output>
+          <button id="clear-button" type="button" disabled>Clear</button>
+        </div>
         <label class="check-control">
           <input id="direction-toggle" type="checkbox" />
           Show direction
         </label>
-        <button id="export-button" type="button">Export SVG</button>
-        <button id="clear-button" class="quiet" type="button">Clear selection</button>
+        <button
+          id="export-button"
+          class="icon-button"
+          type="button"
+          aria-label="Download SVG"
+          title="Download SVG"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4" />
+          </svg>
+        </button>
       </section>
 
       <section class="workspace">
         <div id="figure" class="figure" aria-label="Permutation diagram"></div>
-        <aside class="metadata" aria-live="polite">
-          <span class="metadata-label">Selected edge</span>
-          <output id="selection-output">None</output>
-        </aside>
       </section>
     </main>
     <script type="module" src="/src/main.ts"></script>

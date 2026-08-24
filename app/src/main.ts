@@ -1,8 +1,8 @@
 import "./style.css";
-import { EXAMPLES, getExample, type ExampleId } from "./examples";
-import { downloadSvg } from "./export";
-import { renderDiagram } from "./renderer";
-import type { DirectedEdge } from "./geometry";
+import { EXAMPLES, getExample, type ExampleId } from "./ui/examples";
+import { downloadSvg } from "./renderer/export";
+import { renderDiagram } from "./renderer/svgRenderer";
+import type { DirectedEdge } from "./geometry/disc";
 
 const figure = requireElement<HTMLDivElement>("figure");
 const exampleSelect = requireElement<HTMLSelectElement>("example-select");

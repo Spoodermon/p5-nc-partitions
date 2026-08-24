@@ -1,4 +1,4 @@
-import type { Cycle, DiagramExample } from "./examples";
+import type { Cycle, DiagramExample } from "../ui/examples";
 
 export const VIEWBOX_SIZE = 1000;
 export const DISC_CENTER = { x: 500, y: 500 } as const;

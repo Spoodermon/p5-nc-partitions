@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getExample } from "../src/examples";
-import { arcDepth, createDiscLayout, makeDiscArc } from "../src/geometry";
+import { getExample } from "../src/ui/examples";
+import { arcDepth, createDiscLayout, makeDiscArc } from "../src/geometry/disc";
 
 describe("curved edge grammar", () => {
   it("creates two distinct curved paths for the two-cycle", () => {

@@ -1,5 +1,5 @@
 import { SVG, type Marker, type Path, type Svg } from "@svgdotjs/svg.js";
-import type { DiagramExample } from "./examples";
+import type { DiagramExample } from "../ui/examples";
 import {
   DISC_CENTER,
   DISC_RADIUS,
@@ -7,7 +7,7 @@ import {
   createDiscLayout,
   makeDiscArc,
   type DirectedEdge,
-} from "./geometry";
+} from "../geometry/disc";
 
 const CYCLE_COLORS = ["#176b75", "#9a4f22", "#5b4b99", "#28784d", "#9a3655"] as const;
 

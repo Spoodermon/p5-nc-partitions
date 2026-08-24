@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { assertExportIsVector, serializeFigure } from "../src/export";
+import { assertExportIsVector, serializeFigure } from "../src/renderer/export";
 
 describe("SVG serialization", () => {
   it("serializes a standalone vector figure without raster content", () => {

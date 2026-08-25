@@ -5,10 +5,11 @@ import {
   DEFAULT_HARD_CLEARANCE,
   extractAnnularEdges,
   routeAnnularPermutation,
+  routesConflict,
   segmentDistance,
   serializeRoutedAnnularDiagram,
 } from "../src/geometry/annular-routing";
-import { createAnnularLayout, createAnnularRoute, sampleAnnularRoute } from "../src/geometry/annular";
+import { createAnnularLayout, createAnnularRoute, createCoverCubicAnnularRoute, sampleAnnularRoute, type AnnularRoute } from "../src/geometry/annular";
 import { annularPermutationFromImages, isAnnularNoncrossing, parseAnnularPermutation } from "../src/math";
 import { permutationImages } from "./helpers/permutations";
 
@@ -43,13 +44,36 @@ describe("global annular routing", () => {
   it("catches crossing, coincident, and near route geometry", () => {
     const layout = createAnnularLayout(4, 2);
     const edge = extractAnnularEdges(parsed("(1 3)(2)(4)(5)(6)", 4, 2))[0]!;
-    const make = (route: ReturnType<typeof createAnnularRoute>) => ({
+    const make = (route: AnnularRoute) => ({
       edge, winding: route.winding, lane: 0, excursion: route.excursion, angularBias: route.angularBias,
       route, samples: sampleAnnularRoute(route, 97), localScore: 0, key: "test",
     });
     const first = make(createAnnularRoute(layout, { startLabel: 1, endLabel: 3, excursion: 0.3 }));
     const duplicate = make(createAnnularRoute(layout, { startLabel: 1, endLabel: 3, excursion: 0.3 }));
     expect(analyzeRoutePair(first, duplicate).coincident).toBe(true);
+
+    const start = layout.vertices[0]!.angle;
+    const end = layout.vertices[2]!.angle;
+    const cubic = (u: number) => make(createCoverCubicAnnularRoute(layout, {
+      startLabel: 1, endLabel: 3, startLiftAngle: start, endLiftAngle: end,
+      control1: { theta: start, u }, control2: { theta: end, u },
+    }));
+    const shallow = cubic(0.25);
+    const adequatelySeparated = cubic(0.6);
+    const tooClose = cubic(0.27);
+    expect(analyzeRoutePair(shallow, adequatelySeparated, 24).clearance).toBeGreaterThan(DEFAULT_HARD_CLEARANCE);
+    expect(routesConflict(shallow, tooClose, DEFAULT_HARD_CLEARANCE, 24)).toBe(true);
+    expect(analyzeRoutePair(shallow, cubic(0.25), 24).coincident).toBe(true);
+
+    const crossingEdge = extractAnnularEdges(parsed("(1 3)(2 4)(5)(6)", 4, 2))[2]!;
+    const crossingRoute = createCoverCubicAnnularRoute(layout, {
+      startLabel: 2, endLabel: 4,
+      startLiftAngle: layout.vertices[1]!.angle, endLiftAngle: layout.vertices[3]!.angle,
+      control1: { theta: layout.vertices[1]!.angle, u: 0.45 },
+      control2: { theta: layout.vertices[3]!.angle, u: 0.45 },
+    });
+    const crossing = { ...make(crossingRoute), edge: crossingEdge };
+    expect(analyzeRoutePair(shallow, crossing, 24).intersects).toBe(true);
   });
 
   it("rejects mathematically invalid input before search", () => {
@@ -94,12 +118,20 @@ describe("global annular routing", () => {
     if (result.isRoutable) expect(result.diagnostics.hardCollisionCount).toBe(0);
   }, 20_000);
 
-  it("routes an asymmetric dense small cycle", () => {
+  it("routes all four former (1,4) blockers with explicit corridors", () => {
     for (const fixture of [
       parsed("(1 2)(3 4 5)", 1, 4),
+      parsed("(1 3)(2 4 5)", 1, 4),
+      parsed("(1 4)(2 3 5)", 1, 4),
+      parsed("(1 5)(2 3 4)", 1, 4),
     ]) {
-      const result = routeAnnularPermutation(fixture, { phaseCandidateCount: 2, maxSearchNodes: 100_000, maxCandidatesPerEdge: 300, sampleCount: 25 });
-      expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+      const result = routeAnnularPermutation(fixture);
+      expect(result.isRoutable, `${fixture.permutation.images.join(",")}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
+      if (result.isRoutable) {
+        expect(result.diagnostics.minimumClearance).toBeGreaterThanOrEqual(DEFAULT_HARD_CLEARANCE);
+        expect(result.corridors.some((corridor) => corridor.kind === "through")).toBe(true);
+        expect(result.corridors.some((corridor) => corridor.kind === "inner-collar")).toBe(true);
+      }
     }
   }, 30_000);
 

@@ -1,12 +1,16 @@
 import { SVG, type Svg } from "@svgdotjs/svg.js";
-import { ANNULAR_VIEWBOX_SIZE, type AnnularRoute, type Point, type Vector } from "../geometry/annular";
-import { routeAnnularPermutation, type RoutedAnnularSuccess } from "../geometry/annular-routing";
+import { ANNULAR_VIEWBOX_SIZE, coverRadius, pointAtPolar, type AnnularRoute, type Point, type Vector } from "../geometry/annular";
+import { INNER_COLLAR_CEILING, OUTER_COLLAR_FLOOR, routeAnnularPermutation, type RoutedAnnularSuccess } from "../geometry/annular-routing";
 import { parseAnnularPermutation } from "../math";
 import "./annularRoutingLab.css";
 
 interface Fixture { readonly name: string; readonly p: number; readonly q: number; readonly cycles: string; }
 
 const fixtures: readonly Fixture[] = [
+  { name: "Former blocker — through pair + inner 3-cycle", p: 1, q: 4, cycles: "(1 2)(3 4 5)" },
+  { name: "Former blocker — attachment at 3", p: 1, q: 4, cycles: "(1 3)(2 4 5)" },
+  { name: "Former blocker — attachment at 4", p: 1, q: 4, cycles: "(1 4)(2 3 5)" },
+  { name: "Former blocker — attachment at 5", p: 1, q: 4, cycles: "(1 5)(2 3 4)" },
   { name: "(1,1) identity", p: 1, q: 1, cycles: "(1)(2)" },
   { name: "(1,1) through transposition", p: 1, q: 1, cycles: "(1 2)" },
   { name: "(2,2) connected representative", p: 2, q: 2, cycles: "(1 3 2)(4)" },
@@ -48,13 +52,30 @@ function drawDiagram(draw: Svg, result: RoutedAnnularSuccess): void {
   const { layout } = result;
   draw.circle(layout.outerRadius * 2).center(500, 500).fill("#fffdf9").stroke({ color: "#aeb9c0", width: 2.2 });
   draw.circle(layout.innerRadius * 2).center(500, 500).fill("#edf1f3").stroke({ color: "#aeb9c0", width: 2.2 });
+  if (diagnosticToggle.checked) {
+    for (const [u, color] of [[OUTER_COLLAR_FLOOR, "#285f6b"], [INNER_COLLAR_CEILING, "#9a552d"]] as const) {
+      draw.circle(coverRadius(layout, u) * 2).center(500, 500).fill("none").stroke({ color, width: 1, dasharray: "7 8", opacity: 0.32 });
+    }
+    const seamAngle = (boundary: "outer" | "inner", seam: number): number => {
+      const positions = boundary === "outer" ? result.layout.vertices.slice(0, result.layout.p) : result.layout.vertices.slice(result.layout.p);
+      const next = positions[(seam + 1) % positions.length];
+      const direction = boundary === "outer" ? 1 : -1;
+      return (next?.angle ?? 0) - direction * Math.PI / positions.length;
+    };
+    for (const [angle, color] of [[seamAngle("outer", result.outerSeam), "#285f6b"], [seamAngle("inner", result.innerSeam), "#9a552d"]] as const) {
+      const inner = pointAtPolar(layout.center, layout.innerRadius, angle);
+      const outer = pointAtPolar(layout.center, layout.outerRadius, angle);
+      draw.line(inner.x, inner.y, outer.x, outer.y).stroke({ color, width: 1.2, dasharray: "4 7", opacity: 0.45 });
+    }
+  }
   result.routes.forEach((candidate) => {
     const color = palette[candidate.edge.cycleIndex % palette.length] as string;
     draw.path(sampledPath(candidate.route)).fill("none").stroke({ color, width: 3.4, linecap: "round", linejoin: "round" });
     if (directionToggle.checked) draw.path(arrowPath(candidate.route.pointAt(0.5), candidate.route.tangentAt(0.5))).fill(color);
     if (diagnosticToggle.checked) {
       const point = candidate.route.pointAt(0.56);
-      draw.text(`${candidate.edge.startLabel}→${candidate.edge.endLabel} k${candidate.winding} L${candidate.lane} β${format(candidate.angularBias)}`)
+      const corridor = result.corridors[candidate.edge.cycleIndex]?.kind ?? "?";
+      draw.text(`${candidate.edge.startLabel}→${candidate.edge.endLabel} ${corridor} k${candidate.winding} L${candidate.lane} β${format(candidate.angularBias)}`)
         .font({ family: "ui-monospace, monospace", size: 11, anchor: "middle" }).fill("#374858").center(point.x, point.y - 13);
     }
   });
@@ -88,7 +109,8 @@ function render(): void {
   summary.classList.remove("error");
   drawDiagram(draw, result);
   const clearance = Number.isFinite(result.diagnostics.minimumClearance) ? format(result.diagnostics.minimumClearance) : "∞";
-  summary.textContent = `${fixture.cycles} · phase ${format(result.phase)} · ${result.routes.length} edges · hard collisions ${result.diagnostics.hardCollisionCount} · minimum clearance ${clearance} · ${format(result.diagnostics.elapsedMilliseconds)} ms · ${result.diagnostics.searchNodes} nodes`;
+  const corridors = result.corridors.map((corridor) => `(${corridor.cycle.join(" ")})=${corridor.kind}`).join(", ");
+  summary.textContent = `${fixture.cycles} · phase ${format(result.phase)} · seams O${result.outerSeam}/I${result.innerSeam} · ${corridors} · ${result.routes.length} edges · hard collisions ${result.diagnostics.hardCollisionCount} · minimum clearance ${clearance} · ${format(result.diagnostics.elapsedMilliseconds)} ms · ${result.diagnostics.searchNodes} nodes`;
 }
 
 [selector, directionToggle, diagnosticToggle].forEach((control) => control.addEventListener("change", render));

@@ -27,6 +27,8 @@ export interface AnnularRouteCandidate {
   readonly samples: readonly Point[];
   readonly localScore: number;
   readonly key: string;
+  readonly routeFamily?: "analytical-bump" | "cover-cubic";
+  readonly strokeWidth?: number;
 }
 
 export interface RoutedAnnularEdge extends AnnularRouteCandidate {}
@@ -50,6 +52,8 @@ export interface RoutingMetrics {
   readonly elapsedMilliseconds: number;
   readonly phaseScore: number;
   readonly routeScore: number;
+  readonly preferredClearanceDeficit?: number;
+  readonly topologicalRejections?: number;
 }
 
 export interface RoutingOptions {
@@ -59,6 +63,43 @@ export interface RoutingOptions {
   readonly sampleCount?: number;
   readonly hardClearance?: number;
   readonly commonEndpointRadius?: number;
+  readonly strokeWidth?: number;
+  readonly visualGap?: number;
+  readonly preferredClearance?: number;
+}
+
+export type CycleCorridorKind = "outer-collar" | "inner-collar" | "through";
+
+export interface BoundaryLinearPosition {
+  readonly label: number;
+  readonly rank: number;
+  readonly liftAngle: number;
+}
+
+export interface CycleCorridor {
+  readonly cycleIndex: number;
+  readonly cycle: readonly number[];
+  readonly kind: CycleCorridorKind;
+  readonly nestingDepth: number;
+  readonly span: readonly [number, number] | null;
+  readonly lowerCoverHeight: number;
+  readonly upperCoverHeight: number;
+}
+
+export interface SeamState {
+  readonly outerSeam: number;
+  readonly innerSeam: number;
+  readonly outerPositions: readonly BoundaryLinearPosition[];
+  readonly innerPositions: readonly BoundaryLinearPosition[];
+}
+
+export interface CycleRouteBundle {
+  readonly cycleIndex: number;
+  readonly corridor: CycleCorridor;
+  readonly vertexLifts: Readonly<Record<number, number>>;
+  readonly routes: readonly AnnularRouteCandidate[];
+  readonly score: number;
+  readonly key: string;
 }
 
 export type RoutingFailureReason =
@@ -71,6 +112,9 @@ export interface RoutedAnnularSuccess {
   readonly permutation: AnnularPermutation;
   readonly layout: AnnularLayout;
   readonly phase: number;
+  readonly outerSeam: number;
+  readonly innerSeam: number;
+  readonly corridors: readonly CycleCorridor[];
   readonly routes: readonly RoutedAnnularEdge[];
   readonly diagnostics: RoutingMetrics;
 }
@@ -83,4 +127,3 @@ export interface RoutedAnnularFailure {
 }
 
 export type RoutedAnnularDiagram = RoutedAnnularSuccess | RoutedAnnularFailure;
-

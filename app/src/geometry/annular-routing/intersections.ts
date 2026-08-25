@@ -52,8 +52,73 @@ function sharedLabels(first: AnnularRouteCandidate, second: AnnularRouteCandidat
   return [...new Set(firstLabels.filter((label) => secondLabels.has(label)))];
 }
 
-function nearSharedEndpoint(point: Point, shared: readonly Point[], radius: number): boolean {
-  return shared.some((endpoint) => pointDistance(point, endpoint) < radius);
+type SegmentPiece = readonly [Point, Point];
+
+function interpolate(start: Point, end: Point, t: number): Point {
+  return Object.freeze({
+    x: start.x + (end.x - start.x) * t,
+    y: start.y + (end.y - start.y) * t,
+  });
+}
+
+/** Return the portions of a segment outside all common-endpoint disks. */
+function outsideEndpointDisks(
+  start: Point,
+  end: Point,
+  shared: readonly Point[],
+  radius: number,
+): readonly SegmentPiece[] {
+  if (shared.length === 0 || radius <= 0) return Object.freeze([[start, end] as const]);
+  let intervals: Array<readonly [number, number]> = [[0, 1]];
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const a = dx * dx + dy * dy;
+  if (a <= EPSILON) return shared.some((center) => pointDistance(start, center) < radius)
+    ? Object.freeze([])
+    : Object.freeze([[start, end] as const]);
+
+  for (const center of shared) {
+    const sx = start.x - center.x;
+    const sy = start.y - center.y;
+    const b = 2 * (sx * dx + sy * dy);
+    const c = sx * sx + sy * sy - radius * radius;
+    const discriminant = b * b - 4 * a * c;
+    let insideStart = Number.POSITIVE_INFINITY;
+    let insideEnd = Number.NEGATIVE_INFINITY;
+    if (discriminant >= 0) {
+      const root = Math.sqrt(discriminant);
+      insideStart = Math.max(0, (-b - root) / (2 * a));
+      insideEnd = Math.min(1, (-b + root) / (2 * a));
+    } else if (c < 0) {
+      insideStart = 0;
+      insideEnd = 1;
+    }
+    if (insideStart >= insideEnd) continue;
+    const next: Array<readonly [number, number]> = [];
+    for (const [from, to] of intervals) {
+      if (insideEnd <= from || insideStart >= to) next.push([from, to]);
+      else {
+        if (from < insideStart) next.push([from, Math.min(to, insideStart)]);
+        if (insideEnd < to) next.push([Math.max(from, insideEnd), to]);
+      }
+    }
+    intervals = next;
+  }
+  return Object.freeze(intervals
+    .filter(([from, to]) => to - from > EPSILON)
+    .map(([from, to]) => Object.freeze([interpolate(start, end, from), interpolate(start, end, to)] as const)));
+}
+
+function clippedRouteSegments(
+  samples: readonly Point[],
+  shared: readonly Point[],
+  radius: number,
+): readonly SegmentPiece[] {
+  const result: SegmentPiece[] = [];
+  for (let index = 0; index < samples.length - 1; index += 1) {
+    result.push(...outsideEndpointDisks(samples[index] as Point, samples[index + 1] as Point, shared, radius));
+  }
+  return result;
 }
 
 export function analyzeRoutePair(
@@ -70,21 +135,14 @@ export function analyzeRoutePair(
   let intersects = false;
   let coincidentSegments = 0;
 
-  for (let i = 0; i < first.samples.length - 1; i += 1) {
-    const a = first.samples[i] as Point;
-    const b = first.samples[i + 1] as Point;
-    for (let j = 0; j < second.samples.length - 1; j += 1) {
-      const c = second.samples[j] as Point;
-      const d = second.samples[j + 1] as Point;
-      if (sharedPoints.length > 0
-        && nearSharedEndpoint(a, sharedPoints, commonEndpointRadius)
-        && nearSharedEndpoint(b, sharedPoints, commonEndpointRadius)
-        && nearSharedEndpoint(c, sharedPoints, commonEndpointRadius)
-        && nearSharedEndpoint(d, sharedPoints, commonEndpointRadius)) continue;
-      const distance = segmentDistance(a, b, c, d);
+  const firstSegments = clippedRouteSegments(first.samples, sharedPoints, commonEndpointRadius);
+  const secondSegments = clippedRouteSegments(second.samples, sharedPoints, commonEndpointRadius);
+  for (const [firstStart, firstEnd] of firstSegments) {
+    for (const [secondStart, secondEnd] of secondSegments) {
+      const distance = segmentDistance(firstStart, firstEnd, secondStart, secondEnd);
       clearance = Math.min(clearance, distance);
       if (distance <= EPSILON) intersects = true;
-      if (distance <= 0.2 && Math.abs(cross(a, b, c)) < 0.5 && Math.abs(cross(a, b, d)) < 0.5) {
+      if (distance <= 0.2 && Math.abs(cross(firstStart, firstEnd, secondStart)) < 0.5 && Math.abs(cross(firstStart, firstEnd, secondEnd)) < 0.5) {
         coincidentSegments += 1;
       }
     }
@@ -109,21 +167,14 @@ export function routesConflict(
     ? first.samples[0] as Point
     : first.samples[first.samples.length - 1] as Point);
   let coincidentSegments = 0;
-  for (let i = 0; i < first.samples.length - 1; i += 1) {
-    const a = first.samples[i] as Point;
-    const b = first.samples[i + 1] as Point;
-    for (let j = 0; j < second.samples.length - 1; j += 1) {
-      const c = second.samples[j] as Point;
-      const d = second.samples[j + 1] as Point;
-      if (boxesFar(a, b, c, d, hardClearance)) continue;
-      if (sharedPoints.length > 0
-        && nearSharedEndpoint(a, sharedPoints, commonEndpointRadius)
-        && nearSharedEndpoint(b, sharedPoints, commonEndpointRadius)
-        && nearSharedEndpoint(c, sharedPoints, commonEndpointRadius)
-        && nearSharedEndpoint(d, sharedPoints, commonEndpointRadius)) continue;
-      const distance = segmentDistance(a, b, c, d);
+  const firstSegments = clippedRouteSegments(first.samples, sharedPoints, commonEndpointRadius);
+  const secondSegments = clippedRouteSegments(second.samples, sharedPoints, commonEndpointRadius);
+  for (const [firstStart, firstEnd] of firstSegments) {
+    for (const [secondStart, secondEnd] of secondSegments) {
+      if (boxesFar(firstStart, firstEnd, secondStart, secondEnd, hardClearance)) continue;
+      const distance = segmentDistance(firstStart, firstEnd, secondStart, secondEnd);
       if (distance < hardClearance) return true;
-      if (distance <= 0.2 && Math.abs(cross(a, b, c)) < 0.5 && Math.abs(cross(a, b, d)) < 0.5) {
+      if (distance <= 0.2 && Math.abs(cross(firstStart, firstEnd, secondStart)) < 0.5 && Math.abs(cross(firstStart, firstEnd, secondEnd)) < 0.5) {
         coincidentSegments += 1;
         if (coincidentSegments >= 2) return true;
       }

@@ -1,6 +1,6 @@
 # Permutation Visualizer application
 
-This directory contains the canonical TypeScript, Vite, and SVG.js application for disc noncrossing partition diagrams. The former NCV-1 technology spike has been promoted here; legacy p5 files remain at the repository root as historical reference.
+This directory contains the canonical TypeScript, Vite, and SVG.js application for disc noncrossing partitions and annular noncrossing permutations. Legacy p5 files remain at the repository root as historical reference.
 
 ## Install and run
 
@@ -42,7 +42,7 @@ K(π) = π⁻¹γₙ
 
 Invalid syntax, duplicate or missing support, and crossing partitions are reported without replacing the last valid figure.
 
-### Annular core
+### Annular input
 
 Annular data denotes an **actual permutation**, not a set partition. Orientation is therefore retained:
 
@@ -69,7 +69,7 @@ disconnected:  #(τ) + #(K_{p,q}(τ)) = p + q + 2
 
 The inner mathematical cycle remains `(p+1 … p+q)`. A future renderer may place inner labels in the opposite screen-angular orientation, but that layout choice must not reverse the mathematical permutation.
 
-Annular mathematics and global routing are available as independently tested modules. Annular rendering is still not exposed in the production UI.
+Production annular input uses separate positive-integer `p` and `q` fields plus oriented cycle notation. Syntax/domain errors, mathematically crossing permutations, and bounded-router failures are reported distinctly without replacing the last valid figure.
 
 ## Annular geometry foundation
 
@@ -121,18 +121,18 @@ Candidate pairs are checked with 49 deterministic samples per analytical route. 
 
 Search is bounded to 140 candidates per edge and 10,000 nodes per phase by default. A valid mathematical permutation that exhausts this finite search returns `search-limit-exceeded` or `no-collision-free-routing`; it is never reclassified as mathematically invalid and is never drawn with intersecting or straight-chord fallbacks. Route-plan serialization and all tie-breaking are deterministic.
 
-NCV-5 is awaiting human visual sign-off. The production disc page, disc renderer, selection behaviour, and disc SVG export remain unchanged; production annular UI and export are deferred to NCV-6.
+The production renderer consumes the admitted routed diagram directly. Developer diagnostics remain confined to the laboratory.
 
 ## Renderer
 
-The application lays out vertices deterministically in a `0 0 1000 1000` SVG viewBox and renders permutation relations as cubic Bézier arcs. Forward and return roles have distinct depth, two-cycles form a lens, singleton fixed points receive a restrained presentation loop, and optional direction markers appear at curve midpoints.
+Disc geometry uses its admitted cubic Bézier arcs. Annular geometry comes from the deterministic global router and is sampled directly from each admitted route. Singleton fixed points remain visible loops and optional direction markers appear at curve midpoints.
 
 SVG export serializes the same live SVG DOM used on screen. It removes transient selection state but does not recompute geometry or include raster content.
 
 ## SVG export
 
-The download icon serializes the current live SVG DOM. Export preserves the current partition/complement and direction-marker option, removes transient selection state, and contains no Canvas or raster data.
+The download icon serializes the current live SVG DOM in either mode. Export preserves current geometry, phase, fill, widths, and direction markers, removes transient selection state, and contains no Canvas, raster data, controls, or developer diagnostics.
 
 ## Known limitations
 
-The bounded router may report failure for larger annular permutations outside the exhaustive admission range. The application still has no production annular UI or annular SVG export, publication-recipe format, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, or final scene architecture. NCV-5 routing is not yet visually approved by the user.
+The bounded router may report failure for larger annular permutations outside the exhaustive admission range. Publication presets, figure recipes, PDF/TikZ conversion, embedded publication fonts, and recurrence exposition remain deferred. NCV-7 is the dedicated visual-language and UX refinement branch, including the older disc aesthetic and post-route annular spline presentation.

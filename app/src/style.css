@@ -37,6 +37,10 @@ fieldset {
 }
 
 .heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
   margin-bottom: 14px;
 }
 
@@ -82,22 +86,53 @@ fieldset {
   cursor: pointer;
 }
 
-.partition-form {
+.surface-toggle {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  margin: 0;
+  padding: 3px;
+  border: 1px solid #c8d1da;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.surface-toggle label { cursor: pointer; }
+.surface-toggle input { position: absolute; opacity: 0; }
+.surface-toggle span { display: block; padding: 6px 11px; border-radius: 6px; color: #52606e; font-size: 13px; font-weight: 700; }
+.surface-toggle input:checked + span { background: #176b75; color: #ffffff; }
+.surface-toggle input:focus-visible + span { outline: 2px solid #176b75; outline-offset: 2px; }
+
+.mode-inputs {
   display: grid;
-  grid-column: 1 / 3;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.mode-inputs[hidden],
+[hidden] {
+  display: none !important;
+}
+
+.notation-form {
+  display: grid;
   grid-template-columns: auto minmax(180px, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
 
-.partition-form label,
+.notation-form label,
+.annular-form label,
 .view-toggle legend {
   color: #52606e;
   font-size: 12px;
   font-weight: 700;
 }
 
-.partition-form input {
+.notation-form input,
+.annular-form input {
   min-width: 0;
   height: 40px;
   padding: 0 11px;
@@ -108,7 +143,8 @@ fieldset {
   font-family: Georgia, "Times New Roman", serif;
 }
 
-.partition-form button {
+.notation-form button,
+.annular-form button {
   height: 40px;
   padding: 0 13px;
   border: 1px solid #176b75;
@@ -119,7 +155,6 @@ fieldset {
 
 .view-toggle {
   display: flex;
-  grid-column: 3 / 6;
   min-height: 40px;
   align-items: center;
   gap: 12px;
@@ -129,6 +164,18 @@ fieldset {
   border-radius: 8px;
   background: #ffffff;
 }
+
+.annular-form {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 68px 68px minmax(200px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.annular-form label { display: grid; gap: 5px; }
+.annular-form input { width: 100%; }
+.annular-notation { min-width: 0; }
 
 .thickness-controls {
   display: grid;
@@ -178,7 +225,7 @@ fieldset {
   accent-color: #176b75;
 }
 
-.partition-message {
+.input-message {
   grid-column: 1 / -1;
   min-height: 20px;
   margin: -2px 0 0;
@@ -187,7 +234,7 @@ fieldset {
   font-size: 14px;
 }
 
-.partition-message[data-state="error"] {
+.input-message[data-state="error"] {
   color: #b42318;
 }
 
@@ -320,6 +367,7 @@ fieldset {
   }
 
   .partition-form,
+  .mode-inputs,
   .view-toggle,
   .thickness-controls {
     grid-column: 1 / -1;
@@ -344,15 +392,40 @@ fieldset {
     grid-row: auto;
   }
 
-  .partition-form {
+  .mode-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .notation-form {
     grid-template-columns: 1fr auto;
   }
 
-  .partition-form label {
+  .notation-form label {
     grid-column: 1 / -1;
+  }
+
+  .annular-form {
+    grid-template-columns: 1fr 1fr auto;
+  }
+
+  .annular-notation {
+    grid-column: 1 / 3;
+  }
+
+  .annular-form button {
+    grid-column: 3;
+    grid-row: 2;
   }
 
   .thickness-controls {
     grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 390px) {
+  .heading { align-items: flex-start; flex-direction: column; }
+  .annular-form { grid-template-columns: 1fr 1fr; }
+  .annular-notation { grid-column: 1 / -1; }
+  .annular-form button { grid-column: 1 / -1; grid-row: auto; }
+  .thickness-controls label { grid-template-columns: 96px minmax(70px, 1fr) 30px; }
 }

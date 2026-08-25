@@ -16,7 +16,7 @@ export function serializeFigure(svg: SVGSVGElement): string {
 }
 
 export function assertExportIsVector(svgText: string): void {
-  const forbidden = ["NaN", "undefined", "<canvas", "data:image/png", "data:image/jpeg"];
+  const forbidden = ["NaN", "undefined", "<canvas", "<foreignObject", "<script", "data:image/png", "data:image/jpeg"];
   const violation = forbidden.find((token) => svgText.includes(token));
   if (violation) throw new Error(`Export contains forbidden token: ${violation}`);
 

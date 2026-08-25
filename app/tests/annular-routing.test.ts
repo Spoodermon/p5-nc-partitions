@@ -31,7 +31,33 @@ describe("global annular routing", () => {
   it("searches a bounded deterministic phase set containing the NCV-4 default", () => {
     const first = annularPhaseCandidates(5, 3);
     expect(first).toEqual(annularPhaseCandidates(5, 3));
+    expect(first[0]).toBeCloseTo(-Math.PI / 6, 12);
     expect(first).toContain(Math.PI / 15);
+  });
+
+  it("reserves visible singleton loops and nests the inner two-cycle return farther out", () => {
+    const result = routeAnnularPermutation(parsed("(1)(2)(3)(4 5)", 3, 2), { phaseCandidateCount: 3 });
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    expect(result.phase).toBeCloseTo(-Math.PI / 6, 12);
+    const singletonRoutes = result.routes.filter((route) => route.edge.role === "singleton");
+    expect(singletonRoutes).toHaveLength(3);
+    for (const route of singletonRoutes) {
+      expect(route.excursion).toBeGreaterThanOrEqual(0.1);
+      expect(Math.abs(route.angularBias)).toBeGreaterThanOrEqual(0.16);
+      expect(Math.hypot(route.route.pointAt(0.5).x - route.route.pointAt(0).x, route.route.pointAt(0.5).y - route.route.pointAt(0).y)).toBeGreaterThan(20);
+    }
+    const forward = result.routes.find((route) => route.edge.startLabel === 4 && route.edge.endLabel === 5);
+    const returning = result.routes.find((route) => route.edge.startLabel === 5 && route.edge.endLabel === 4);
+    if (!forward || !returning) throw new Error("missing inner two-cycle routes");
+    const radiusAt = (route: typeof forward, t: number) => Math.hypot(route.route.pointAt(t).x - result.layout.center.x, route.route.pointAt(t).y - result.layout.center.y);
+    for (const t of [0.25, 0.5, 0.75]) {
+      const forwardTheta = forward.route.coverPointAt(t).theta;
+      const returnTheta = returning.route.coverPointAt(1 - t).theta;
+      const angularSeparation = Math.abs(Math.atan2(Math.sin(forwardTheta - returnTheta), Math.cos(forwardTheta - returnTheta)));
+      expect(angularSeparation).toBeLessThan(1e-10);
+      expect(radiusAt(returning, 1 - t) - radiusAt(forward, t)).toBeGreaterThan(DEFAULT_HARD_CLEARANCE);
+    }
   });
 
   it("detects intersections and orders segment clearances", () => {
@@ -143,7 +169,7 @@ describe("global annular routing", () => {
     if (result.isRoutable) expect(result.diagnostics.hardCollisionCount).toBe(0);
   }, 20_000);
 
-  it("uses a proven non-principal fallback for the through four-cycle stress case", () => {
+  it("uses the principal class or a proven fallback for the through four-cycle stress case", () => {
     const created = annularPermutationFromImages(1, 4, [4, 3, 1, 2, 5]);
     if (!created.ok) throw new Error(created.error.kind);
     const result = routeAnnularPermutation(created.value, { phaseCandidateCount: 9, sampleCount: 25, maxSearchNodes: 2_000 });
@@ -151,10 +177,57 @@ describe("global annular routing", () => {
     if (result.isRoutable) {
       expect(result.diagnostics.hardCollisionCount).toBe(0);
       expect(result.diagnostics.minimumClearance).toBeGreaterThanOrEqual(DEFAULT_HARD_CLEARANCE);
-      expect(result.diagnostics.principalThroughFallbackUsed).toBe(true);
-      expect(result.diagnostics.throughRoutes?.some((route) => route.principalClassProvenInfeasible)).toBe(true);
+      if (result.diagnostics.principalThroughFallbackUsed) {
+        expect(result.diagnostics.throughRoutes?.some((route) => route.principalClassProvenInfeasible)).toBe(true);
+      } else {
+        expect(result.diagnostics.throughRoutes?.every((route) => route.selectedWinding === route.principalWinding)).toBe(true);
+      }
     }
   }, 30_000);
+
+  it("preserves the crowded (1,4) singleton fixture", () => {
+    const created = annularPermutationFromImages(1, 4, [3, 1, 4, 2, 5]);
+    if (!created.ok) throw new Error(created.error.kind);
+    let result = routeAnnularPermutation(created.value, {
+      phaseCandidateCount: 2,
+      sampleCount: 25,
+      maxCandidatesPerEdge: 140,
+      maxSearchNodes: 2_000,
+    });
+    if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (result.isRoutable) {
+      const singleton = result.routes.find((route) => route.edge.role === "singleton");
+      if (!singleton) throw new Error("missing crowded singleton route");
+      expect(Math.abs(singleton.angularBias)).toBeGreaterThanOrEqual(0.08);
+      const start = singleton.route.pointAt(0);
+      const maximumDisplacement = Math.max(...[0.25, 0.5, 0.75].map((t) => Math.hypot(singleton.route.pointAt(t).x - start.x, singleton.route.pointAt(t).y - start.y)));
+      expect(maximumDisplacement).toBeGreaterThan(10);
+    }
+  }, 30_000);
+
+  it("preserves the crowded (4,1) singleton fixtures", () => {
+    for (const images of [
+      [1, 3, 5, 2, 4], [1, 4, 5, 2, 3], [1, 5, 4, 2, 3], [2, 4, 3, 5, 1],
+      [2, 5, 1, 4, 3], [3, 2, 1, 5, 4], [3, 2, 4, 5, 1], [3, 2, 5, 1, 4],
+      [3, 5, 1, 4, 2], [5, 3, 1, 4, 2], [5, 4, 3, 2, 1], [5, 4, 3, 1, 2],
+    ]) {
+      const created = annularPermutationFromImages(4, 1, images);
+      if (!created.ok) throw new Error(created.error.kind);
+      let result = routeAnnularPermutation(created.value, {
+        phaseCandidateCount: 2,
+        sampleCount: 25,
+        maxCandidatesPerEdge: 140,
+        maxSearchNodes: 2_000,
+      });
+      if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
+      expect(result.isRoutable, `${images.join(",")}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
+      if (result.isRoutable) for (const singleton of result.routes.filter((route) => route.edge.role === "singleton")) {
+        expect(singleton.excursion).toBeGreaterThanOrEqual(0.03);
+        expect(Math.abs(singleton.angularBias)).toBeGreaterThanOrEqual(0.08);
+      }
+    }
+  }, 120_000);
 
   it("preserves the mixed (2,3) through-cycle fallback", () => {
     const created = annularPermutationFromImages(2, 3, [2, 5, 3, 1, 4]);

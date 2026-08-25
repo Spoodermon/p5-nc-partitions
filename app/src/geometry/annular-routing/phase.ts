@@ -3,6 +3,7 @@ import { defaultAnnularPhase, leastCommonMultiple } from "../annular";
 import type { AnnularDirectedEdge } from "./types";
 
 const TWO_PI = 2 * Math.PI;
+export const DEFAULT_ROUTING_INNER_PHASE = -Math.PI / 6;
 
 export function wrapAngle(value: number): number {
   return ((value + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI;
@@ -13,9 +14,13 @@ export function annularPhaseCandidates(p: number, q: number, count = 9): readonl
   const period = TWO_PI / leastCommonMultiple(p, q);
   const values = Array.from({ length: count }, (_, index) => (period * index) / count);
   values.push(defaultAnnularPhase(p, q) % period);
-  return Object.freeze(values
+  const ordered = values
     .sort((a, b) => a - b)
-    .filter((value, index, sorted) => index === 0 || Math.abs(value - (sorted[index - 1] as number)) > 1e-12));
+    .filter((value, index, sorted) => index === 0 || Math.abs(value - (sorted[index - 1] as number)) > 1e-12);
+  return Object.freeze([
+    DEFAULT_ROUTING_INNER_PHASE,
+    ...ordered.filter((value) => Math.abs(value - DEFAULT_ROUTING_INNER_PHASE) > 1e-12),
+  ]);
 }
 
 function outerAngle(label: number, p: number): number {

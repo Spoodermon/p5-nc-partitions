@@ -141,7 +141,24 @@ function pureRoute(
   edgeDeckOffset: number,
 ): AnnularRoute {
   const [start, rawEnd] = normalizedLiftAngles(layout, edge, lifts);
-  const end = rawEnd + edgeDeckOffset * TWO_PI;
+  let end = rawEnd + edgeDeckOffset * TWO_PI;
+  let effectiveDeckOffset = edgeDeckOffset;
+  if (corridor.kind === "inner-collar" && edge.cycleLength === 2) {
+    // A transposition is a narrow oriented ribbon: both directions use the
+    // same angular trace in reverse, with radial depth distinguishing them.
+    effectiveDeckOffset = 0;
+    if (edge.edgeIndex === 0) end = rawEnd;
+    else {
+      const reverseStart = layout.vertices[edge.endLabel - 1]?.angle;
+      const reverseStartLift = lifts[edge.endLabel];
+      const reverseEndLift = lifts[edge.startLabel];
+      if (reverseStart === undefined || reverseStartLift === undefined || reverseEndLift === undefined) {
+        throw new Error("inner two-cycle lift invariant violated");
+      }
+      const reverseDeckShift = reverseStartLift - reverseStart;
+      end = start - (reverseEndLift - reverseDeckShift - reverseStart);
+    }
+  }
   const displacement = end - start;
   const baseDepth = 0.04 + corridor.nestingDepth * 0.03 + laneVariant * 0.02;
   // Longer boundary intervals form the inner side of a contractible collar
@@ -150,9 +167,12 @@ function pureRoute(
   // lifted interval rather than from the arbitrary cycle return edge.
   const spanFraction = Math.min(1, Math.abs(displacement) / TWO_PI);
   const spanDepth = edge.cycleLength === 2
-    ? (edge.edgeIndex === 0 ? 0.23 : 0.02)
+    ? corridor.kind === "inner-collar"
+      ? (edge.edgeIndex === 0 ? 0.23 : 0.42)
+      : (edge.edgeIndex === 0 ? 0.23 : 0.02)
     : Math.min(0.23, 1.84 * spanFraction ** 3);
-  const depth = Math.min(0.27, baseDepth + Math.abs(edgeDeckOffset) * 0.1 + spanDepth);
+  const maximumDepth = edge.cycleLength === 2 && corridor.kind === "inner-collar" ? 0.5 : 0.27;
+  const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth);
   const u = corridor.kind === "outer-collar" ? 1 - depth : depth;
   return createCoverCubicAnnularRoute(layout, {
     startLabel: edge.startLabel,
@@ -273,14 +293,14 @@ function pureBundles(
   if (edges.length === 1 && edges[0]?.role === "singleton") {
     const edge = edges[0];
     const variants: CycleRouteBundle[] = [];
-    for (const excursion of [0.005, 0.05, 0.14, 0.25]) for (const angularBias of [0.015, -0.015, 0.12, -0.12, 0.36, -0.36]) {
+    for (const excursion of [0.03, 0.05, 0.08, 0.1, 0.14, 0.19, 0.25]) for (const angularBias of [0.08, -0.08, 0.12, -0.12, 0.16, -0.16, 0.24, -0.24, 0.34, -0.34]) {
       const route = createAnnularRoute(layout, {
         startLabel: edge.startLabel,
         endLabel: edge.endLabel,
         excursion,
         angularBias,
       });
-      const localScore = excursion + Math.abs(angularBias) * 0.1;
+      const localScore = Math.abs(excursion - 0.14) + Math.abs(Math.abs(angularBias) - 0.16) * 0.1;
       const routed = candidate(layout, edge, route, 0, localScore, `singleton:${excursion}:${angularBias}`, sampleCount, "analytical-bump");
       variants.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze([routed]), score: routed.localScore, key: routed.key }));
     }

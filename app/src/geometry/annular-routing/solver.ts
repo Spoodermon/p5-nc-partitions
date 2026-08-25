@@ -7,7 +7,7 @@ import { extractAnnularEdges } from "./edges";
 import { routesConflict } from "./intersections";
 import { annularPhaseCandidates, endpointPhasePenalty } from "./phase";
 import { annularSeamStates } from "./seams";
-import type { AnnularRouteCandidate, CycleRouteBundle, RoutedAnnularDiagram, RoutedAnnularFailure, RoutedAnnularSuccess, RoutingMetrics, RoutingOptions } from "./types";
+import type { AnnularRouteCandidate, CycleRouteBundle, RoutedAnnularDiagram, RoutedAnnularFailure, RoutedAnnularSuccess, RoutingMetrics, RoutingOptions, ThroughRouteDiagnostic } from "./types";
 
 export const DEFAULT_ROUTE_STROKE_WIDTH = 4;
 export const DEFAULT_VISUAL_GAP = 3.5;
@@ -15,7 +15,7 @@ export const DEFAULT_HARD_CLEARANCE = DEFAULT_ROUTE_STROKE_WIDTH + DEFAULT_VISUA
 export const DEFAULT_PREFERRED_CLEARANCE = 14;
 export const DEFAULT_COMMON_ENDPOINT_RADIUS = 24;
 
-const EMPTY_METRICS: RoutingMetrics = Object.freeze({ hardCollisionCount: 0, minimumClearance: Number.POSITIVE_INFINITY, worstPair: null, labelWarnings: Object.freeze([]), searchedPhaseCount: 0, searchedCandidateCount: 0, searchNodes: 0, elapsedMilliseconds: 0, phaseScore: Number.POSITIVE_INFINITY, routeScore: Number.POSITIVE_INFINITY, preferredClearanceDeficit: 0, topologicalRejections: 0 });
+const EMPTY_METRICS: RoutingMetrics = Object.freeze({ hardCollisionCount: 0, minimumClearance: Number.POSITIVE_INFINITY, worstPair: null, labelWarnings: Object.freeze([]), searchedPhaseCount: 0, searchedCandidateCount: 0, searchNodes: 0, elapsedMilliseconds: 0, phaseScore: Number.POSITIVE_INFINITY, routeScore: Number.POSITIVE_INFINITY, preferredClearanceDeficit: 0, topologicalRejections: 0, principalThroughFallbackUsed: false, throughRoutes: Object.freeze([]) });
 
 interface StateSolution {
   readonly routes: readonly AnnularRouteCandidate[];
@@ -76,6 +76,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
   if (!isAnnularNoncrossing(value)) return Object.freeze({ isRoutable: false, permutation: value, reason: "not-annular-noncrossing", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
   const phaseCount = options.phaseCandidateCount ?? 9;
   const sampleCount = options.sampleCount ?? 65;
+  const maximumCandidatesPerEdge = options.maxCandidatesPerEdge ?? 140;
   const maximumNodes = options.maxSearchNodes ?? 5_000;
   const hard = options.hardClearance ?? (options.strokeWidth ?? DEFAULT_ROUTE_STROKE_WIDTH) + (options.visualGap ?? DEFAULT_VISUAL_GAP);
   const preferred = options.preferredClearance ?? DEFAULT_PREFERRED_CLEARANCE;
@@ -83,30 +84,55 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
   const edges = extractAnnularEdges(value);
   const phases = annularPhaseCandidates(value.p, value.q, phaseCount);
   let searchedCandidates = 0; let searchNodes = 0; let topologicalRejections = 0;
-  for (let phaseIndex = 0; phaseIndex < phases.length; phaseIndex += 1) {
-    const phase = phases[phaseIndex] as number;
-    const layout = createAnnularLayout(value.p, value.q, { innerPhase: phase });
-    // Prefer the wrap seams first: they keep the canonical lifted order
-    // contiguous for cycles using the highest-labelled boundary vertices.
-    for (const seam of [...annularSeamStates(layout)].reverse()) {
-      if (!seamHasPlanarPureSpans(value, seam)) { topologicalRejections += 1; continue; }
-      const corridors = createCycleCorridors(value, seam);
-      const bundleSets = corridors.map((corridor) => generateCycleBundles(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), sampleCount));
-      searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
-      const solution = solveBundleState(bundleSets, hard, endpointRadius, maximumNodes);
-      if (!solution) { searchNodes += maximumNodes; continue; }
-      searchNodes += solution.nodes;
-      const clearance = analyzeRouteClearance(solution.routes, layout, hard, endpointRadius);
-      if (clearance.hardCollisionCount !== 0 || clearance.minimumClearance < hard) continue;
-      const deficit = Number.isFinite(clearance.minimumClearance) ? Math.max(0, preferred - clearance.minimumClearance) : 0;
-      const phaseScore = endpointPhasePenalty(value, edges, phase) + solution.score + deficit * 0.3 - Math.min(clearance.minimumClearance, preferred) * 0.03;
-      return Object.freeze({ isRoutable: true, permutation: value, layout, phase: layout.innerPhase, outerSeam: seam.outerSeam, innerSeam: seam.innerSeam, corridors, routes: Object.freeze(solution.routes), diagnostics: Object.freeze({ ...clearance, searchedPhaseCount: phaseIndex + 1, searchedCandidateCount: searchedCandidates, searchNodes, elapsedMilliseconds: performance.now() - started, phaseScore, routeScore: solution.score, preferredClearanceDeficit: deficit, topologicalRejections }) } satisfies RoutedAnnularSuccess);
+  for (const allowNonPrincipalThrough of [false, true]) {
+    for (let phaseIndex = 0; phaseIndex < phases.length; phaseIndex += 1) {
+      const phase = phases[phaseIndex] as number;
+      const layout = createAnnularLayout(value.p, value.q, { innerPhase: phase });
+      // Prefer the wrap seams first: they keep the canonical lifted order
+      // contiguous for cycles using the highest-labelled boundary vertices.
+      for (const seam of [...annularSeamStates(layout)].reverse()) {
+        if (!seamHasPlanarPureSpans(value, seam)) { topologicalRejections += 1; continue; }
+        const corridors = createCycleCorridors(value, seam);
+        for (const mask of [0]) {
+          const bundleSets = corridors.map((corridor) => {
+            const policy = corridor.kind !== "through" || allowNonPrincipalThrough ? "all" : "principal-only";
+            const candidateLimit = allowNonPrincipalThrough ? maximumCandidatesPerEdge * 10 : maximumCandidatesPerEdge;
+            return generateCycleBundles(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), sampleCount, policy, candidateLimit, hard, endpointRadius);
+          });
+          searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
+          const solution = solveBundleState(bundleSets, hard, endpointRadius, maximumNodes);
+          if (!solution) { searchNodes += maximumNodes; continue; }
+          searchNodes += solution.nodes;
+          const clearance = analyzeRouteClearance(solution.routes, layout, hard, endpointRadius);
+          if (clearance.hardCollisionCount !== 0 || clearance.minimumClearance < hard) continue;
+          const deficit = Number.isFinite(clearance.minimumClearance) ? Math.max(0, preferred - clearance.minimumClearance) : 0;
+          const phaseScore = endpointPhasePenalty(value, edges, phase) + solution.score + deficit * 0.3 - Math.min(clearance.minimumClearance, preferred) * 0.03;
+          const throughRoutes: readonly ThroughRouteDiagnostic[] = Object.freeze(solution.routes.flatMap((route) => {
+          if (route.principalWinding === undefined || route.principalAngularDisplacement === undefined) return [];
+          const selectedAngularDisplacement = route.route.angularDisplacement;
+          return [Object.freeze({
+            edgeId: route.edge.id,
+            principalWinding: route.principalWinding,
+            selectedWinding: route.winding,
+            principalAngularDisplacement: route.principalAngularDisplacement,
+            selectedAngularDisplacement,
+            routeLength: route.routeLength ?? 0,
+            principalClassProvenInfeasible: allowNonPrincipalThrough,
+            excessiveAngularTravel: Math.abs(selectedAngularDisplacement) > Math.abs(route.principalAngularDisplacement) + Math.PI / 2,
+          })];
+          }));
+          const angularWarnings = throughRoutes
+            .filter((route) => route.excessiveAngularTravel && !route.principalClassProvenInfeasible)
+            .map((route) => `${route.edgeId} uses excessive non-principal angular travel`);
+          return Object.freeze({ isRoutable: true, permutation: value, layout, phase: layout.innerPhase, outerSeam: seam.outerSeam, innerSeam: seam.innerSeam, corridors, routes: Object.freeze(solution.routes), diagnostics: Object.freeze({ ...clearance, labelWarnings: Object.freeze([...clearance.labelWarnings, ...angularWarnings]), searchedPhaseCount: phaseIndex + 1, searchedCandidateCount: searchedCandidates, searchNodes, elapsedMilliseconds: performance.now() - started, phaseScore, routeScore: solution.score, preferredClearanceDeficit: deficit, topologicalRejections, principalThroughFallbackUsed: allowNonPrincipalThrough, throughRoutes }) } satisfies RoutedAnnularSuccess);
+        }
+      }
     }
   }
   return Object.freeze({ isRoutable: false, permutation: value, reason: "no-collision-free-routing", diagnostics: Object.freeze({ ...EMPTY_METRICS, searchedPhaseCount: phases.length, searchedCandidateCount: searchedCandidates, searchNodes, topologicalRejections, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
 }
 
 export function serializeRoutedAnnularDiagram(diagram: RoutedAnnularDiagram): string {
-  const data = diagram.isRoutable ? { p: diagram.permutation.p, q: diagram.permutation.q, phase: Number(diagram.phase.toFixed(12)), outerSeam: diagram.outerSeam, innerSeam: diagram.innerSeam, cycles: diagram.corridors.map((corridor) => ({ cycle: `(${corridor.cycle.join(" ")})`, corridor: corridor.kind, nestingDepth: corridor.nestingDepth })), routes: diagram.routes.map((route) => ({ edge: `${route.edge.startLabel}->${route.edge.endLabel}`, winding: route.winding, lane: route.lane, excursion: route.excursion, angularBias: route.angularBias, routeFamily: route.routeFamily })) } : { p: diagram.permutation.p, q: diagram.permutation.q, failure: diagram.reason };
+  const data = diagram.isRoutable ? { p: diagram.permutation.p, q: diagram.permutation.q, phase: Number(diagram.phase.toFixed(12)), outerSeam: diagram.outerSeam, innerSeam: diagram.innerSeam, cycles: diagram.corridors.map((corridor) => ({ cycle: `(${corridor.cycle.join(" ")})`, corridor: corridor.kind, nestingDepth: corridor.nestingDepth })), routes: diagram.routes.map((route) => ({ edge: `${route.edge.startLabel}->${route.edge.endLabel}`, winding: route.winding, principalWinding: route.principalWinding, angularDisplacement: route.route.angularDisplacement, principalAngularDisplacement: route.principalAngularDisplacement, routeLength: route.routeLength, lane: route.lane, excursion: route.excursion, angularBias: route.angularBias, routeFamily: route.routeFamily })), principalThroughFallbackUsed: diagram.diagnostics.principalThroughFallbackUsed } : { p: diagram.permutation.p, q: diagram.permutation.q, failure: diagram.reason };
   return JSON.stringify(data, null, 2);
 }

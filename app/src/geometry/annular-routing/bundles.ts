@@ -6,6 +6,7 @@ import {
   type AnnularRoute,
 } from "../annular";
 import { boundaryPosition } from "./seams";
+import { routesConflict } from "./intersections";
 import type {
   AnnularDirectedEdge,
   AnnularRouteCandidate,
@@ -17,7 +18,48 @@ import type {
 const TWO_PI = 2 * Math.PI;
 const DEFAULT_STROKE_WIDTH = 4;
 
+function routesAreInternallyValid(routes: readonly AnnularRouteCandidate[], hardClearance: number, endpointRadius: number): boolean {
+  for (let first = 0; first < routes.length; first += 1) for (let second = first + 1; second < routes.length; second += 1) {
+    if (routesConflict(routes[first] as AnnularRouteCandidate, routes[second] as AnnularRouteCandidate, hardClearance, endpointRadius)) return false;
+  }
+  return true;
+}
+
+function boundedCandidates<T>(ordered: readonly T[], limit: number, reserve?: (value: T) => boolean): readonly T[] {
+  if (ordered.length <= limit) return ordered;
+  const selected = new Set<number>();
+  if (reserve) ordered.forEach((value, index) => { if (reserve(value)) selected.add(index); });
+  if (selected.size > limit) {
+    const reserved = [...selected]; selected.clear();
+    for (let index = 0; index < limit; index += 1) selected.add(reserved[Math.round(index * (reserved.length - 1) / Math.max(1, limit - 1))] as number);
+  }
+  const preferredTarget = Math.max(1, Math.floor(limit * 0.75));
+  for (let index = 0; index < ordered.length && selected.size < preferredTarget; index += 1) selected.add(index);
+  const coverageTarget = limit - selected.size;
+  for (let index = 0; index < coverageTarget; index += 1) {
+    const fraction = coverageTarget === 1 ? 1 : index / (coverageTarget - 1);
+    selected.add(Math.round(fraction * (ordered.length - 1)));
+  }
+  for (let index = 0; index < ordered.length && selected.size < limit; index += 1) selected.add(index);
+  return [...selected].sort((a, b) => a - b).map((index) => ordered[index] as T);
+}
+
+export function principalThroughWinding(startAngle: number, endAngle: number): number {
+  const ratio = (startAngle - endAngle) / TWO_PI;
+  const lower = Math.floor(ratio);
+  const upper = Math.ceil(ratio);
+  const lowerTravel = Math.abs(endAngle + lower * TWO_PI - startAngle);
+  const upperTravel = Math.abs(endAngle + upper * TWO_PI - startAngle);
+  const selected = Math.abs(lowerTravel - upperTravel) > 1e-12
+    ? (lowerTravel < upperTravel ? lower : upper)
+    : Math.abs(lower) !== Math.abs(upper)
+      ? (Math.abs(lower) < Math.abs(upper) ? lower : upper)
+      : Math.min(lower, upper);
+  return selected === 0 ? 0 : selected;
+}
+
 function candidate(
+  layout: AnnularLayout,
   edge: AnnularDirectedEdge,
   route: AnnularRoute,
   lane: number,
@@ -26,6 +68,20 @@ function candidate(
   sampleCount: number,
   family: "analytical-bump" | "cover-cubic",
 ): AnnularRouteCandidate {
+  const samples = sampleAnnularRoute(route, sampleCount);
+  const routeLength = samples.slice(1).reduce((sum, point, index) => {
+    const previous = samples[index] as { readonly x: number; readonly y: number };
+    return sum + Math.hypot(point.x - previous.x, point.y - previous.y);
+  }, 0);
+  const startAngle = layout.vertices[edge.startLabel - 1]?.angle;
+  const endAngle = layout.vertices[edge.endLabel - 1]?.angle;
+  const isThrough = edge.startBoundary !== edge.endBoundary;
+  const principalWinding = isThrough && startAngle !== undefined && endAngle !== undefined
+    ? principalThroughWinding(startAngle, endAngle)
+    : undefined;
+  const principalAngularDisplacement = principalWinding === undefined || startAngle === undefined || endAngle === undefined
+    ? undefined
+    : endAngle + principalWinding * TWO_PI - startAngle;
   return Object.freeze({
     edge,
     winding: route.winding,
@@ -33,11 +89,15 @@ function candidate(
     excursion: route.excursion,
     angularBias: route.angularBias,
     route,
-    samples: sampleAnnularRoute(route, sampleCount),
+    samples,
     localScore,
     key,
     routeFamily: family,
     strokeWidth: DEFAULT_STROKE_WIDTH,
+    principalWinding,
+    principalAngularDisplacement,
+    routeLength,
+    isPrincipalThroughRoute: principalWinding === undefined ? undefined : route.winding === principalWinding,
   });
 }
 
@@ -53,6 +113,22 @@ function normalizedLiftAngles(
   if (startAngle === undefined) throw new Error("layout vertex invariant violated");
   const deckShift = startLift - startAngle;
   return Object.freeze([startAngle, endLift - deckShift]);
+}
+
+function liftsUsePrincipalThroughEdges(
+  layout: AnnularLayout,
+  edges: readonly AnnularDirectedEdge[],
+  lifts: Readonly<Record<number, number>>,
+): boolean {
+  return edges.every((edge) => {
+    if (edge.startBoundary === edge.endBoundary) return true;
+    const [start, end] = normalizedLiftAngles(layout, edge, lifts);
+    const startAngle = layout.vertices[edge.startLabel - 1]?.angle;
+    const endAngle = layout.vertices[edge.endLabel - 1]?.angle;
+    if (startAngle === undefined || endAngle === undefined) throw new Error("layout vertex invariant violated");
+    const selectedWinding = Math.round((end - endAngle) / TWO_PI);
+    return selectedWinding === principalThroughWinding(start, endAngle);
+  });
 }
 
 function pureRoute(
@@ -133,8 +209,8 @@ function throughRoute(
       endLabel: edge.endLabel,
       startLiftAngle: start,
       endLiftAngle: end,
-      control1: { theta: start + displacement * 0.18 + centralBias * biasScale - endpointFan, u: startU },
-      control2: { theta: start + displacement * 0.82 + centralBias * biasScale + endpointFan, u: endU },
+      control1: { theta: start + displacement * 0.22 + centralBias * biasScale - endpointFan, u: startU },
+      control2: { theta: start + displacement * 0.78 + centralBias * biasScale + endpointFan, u: endU },
     });
   }
   const spanFraction = Math.min(1, Math.abs(displacement) / TWO_PI);
@@ -150,6 +226,24 @@ function throughRoute(
     control1: { theta: start + centralBias * biasScale - sameBoundaryFan, u: centralU },
     control2: { theta: end + centralBias * biasScale + sameBoundaryFan, u: centralU },
   });
+}
+
+function principalLiftRecord(layout: AnnularLayout, corridor: CycleCorridor): Readonly<Record<number, number>> {
+  const result: Record<number, number> = {};
+  const firstLabel = corridor.cycle[0];
+  if (firstLabel === undefined) return Object.freeze(result);
+  const firstAngle = layout.vertices[firstLabel - 1]?.angle;
+  if (firstAngle === undefined) throw new Error("layout vertex invariant violated");
+  result[firstLabel] = firstAngle;
+  let previous = firstAngle;
+  for (const label of corridor.cycle.slice(1)) {
+    const angle = layout.vertices[label - 1]?.angle;
+    if (angle === undefined) throw new Error("layout vertex invariant violated");
+    const winding = principalThroughWinding(previous, angle);
+    previous = angle + winding * TWO_PI;
+    result[label] = previous;
+  }
+  return Object.freeze(result);
 }
 
 function liftRecord(
@@ -173,6 +267,7 @@ function pureBundles(
   corridor: CycleCorridor,
   edges: readonly AnnularDirectedEdge[],
   sampleCount: number,
+  maxBundles: number,
 ): readonly CycleRouteBundle[] {
   const lifts = liftRecord(layout, seam, corridor);
   if (edges.length === 1 && edges[0]?.role === "singleton") {
@@ -186,10 +281,10 @@ function pureBundles(
         angularBias,
       });
       const localScore = excursion + Math.abs(angularBias) * 0.1;
-      const routed = candidate(edge, route, 0, localScore, `singleton:${excursion}:${angularBias}`, sampleCount, "analytical-bump");
+      const routed = candidate(layout, edge, route, 0, localScore, `singleton:${excursion}:${angularBias}`, sampleCount, "analytical-bump");
       variants.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze([routed]), score: routed.localScore, key: routed.key }));
     }
-    return Object.freeze(variants.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)));
+    return Object.freeze(boundedCandidates(variants.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)), maxBundles));
   }
   const bundles: CycleRouteBundle[] = [];
   const patterns: number[][] = [Array(edges.length).fill(0)];
@@ -207,14 +302,14 @@ function pureBundles(
       const routes = edges.map((edge) => {
         const pairedBias = edge.cycleLength === 2 ? 0 : (edge.edgeIndex - (edge.cycleLength - 1) / 2) * edgeSpacing;
         const route = pureRoute(layout, edge, lifts, corridor, laneVariant, pairedBias, edgeDeckOffsets[edge.edgeIndex] ?? 0);
-        return candidate(edge, route, laneVariant + (edge.role === "return" ? 1 : 0), laneVariant + Math.abs(pairedBias), `pure:${laneVariant}:${pairedBias}`, sampleCount, "cover-cubic");
+        return candidate(layout, edge, route, laneVariant + (edge.role === "return" ? 1 : 0), laneVariant + Math.abs(pairedBias), `pure:${laneVariant}:${pairedBias}`, sampleCount, "cover-cubic");
       });
       const key = `pure:${edgeDeckOffsets.join(",")}:${laneVariant}:${edgeSpacing}`;
       bundles.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze(routes), score: routes.reduce((sum, route) => sum + route.localScore, 0), key }));
     }
    }
   }
-  return Object.freeze(bundles.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)));
+  return Object.freeze(boundedCandidates(bundles.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)), maxBundles));
 }
 
 function throughBundles(
@@ -223,6 +318,10 @@ function throughBundles(
   corridor: CycleCorridor,
   edges: readonly AnnularDirectedEdge[],
   sampleCount: number,
+  homotopyPolicy: "all" | "principal-only" | "nonprincipal-only",
+  maxBundles: number,
+  hardClearance: number,
+  endpointRadius: number,
 ): readonly CycleRouteBundle[] {
   const bundles: CycleRouteBundle[] = [];
   const corridorBias = corridor.cycleIndex * 0.18;
@@ -230,8 +329,10 @@ function throughBundles(
   const deckLabels = corridor.cycle.length >= 4
     ? [...corridor.cycle]
     : innerLabels.length > 1 ? innerLabels : corridor.cycle.filter((label) => label <= layout.p);
-  const liftVariants: Array<{ key: string; uniform: number; local: Record<number, number> }> = [-1, 0, 1]
-    .map((uniform) => ({ key: `${uniform}`, uniform, local: {} }));
+  const liftVariants: Array<{ key: string; uniform: number; local: Record<number, number>; lifts?: Readonly<Record<number, number>> }> = [
+    { key: "principal", uniform: 0, local: {}, lifts: principalLiftRecord(layout, corridor) },
+    ...[-1, 0, 1].map((uniform) => ({ key: `${uniform}`, uniform, local: {} })),
+  ];
   if (deckLabels.length > 1) for (const label of deckLabels) for (const offset of [-1, 1]) liftVariants.push({ key: `0:${label}:${offset}`, uniform: 0, local: { [label]: offset } });
   if (corridor.cycle.length === 4) for (const first of deckLabels) for (const second of deckLabels) if (first !== second) {
     liftVariants.push({ key: `0:${first}:-1:${second}:1`, uniform: 0, local: { [first]: -1, [second]: 1 } });
@@ -255,30 +356,63 @@ function throughBundles(
     liftVariants.push({ key: `unwrap:${mode}`, uniform: 0, local });
   }
   const radialVariants = corridor.cycle.length === 2 ? [2, 0] : corridor.cycle.length === 3 ? [2, 0, 1] : [1, 5, 2, 0];
-  const bundleBiases = corridor.cycle.length === 3
+  const bundleBiases = corridor.cycle.length === 2
+    ? [0]
+    : corridor.cycle.length === 3
     ? [0, 0.15, -0.15, 0.3, -0.3, 0.5, -0.5, 0.75, -0.75, 1.1, -1.1, 1.5, -1.5, 1.9, -1.9]
     : [0, 0.3, -0.3, 0.75, -0.75, 1.1, -1.1, 1.5, -1.5, 1.9, -1.9, 2.4, -2.4];
   const separations = corridor.cycle.length === 2
     ? [0.1, 0.24, 0.5, 0.7, 1, 1.3]
     : corridor.cycle.length === 3 ? [0.1, 0.18, 0.28, 0.4, 0.6, 0.85, 1.1, 1.4] : [0.1, 0.28, 0.6, 1.1, 1.8, 2.2, 2.8];
-  for (const liftVariant of liftVariants) {
-    const lifts = liftRecord(layout, seam, corridor, liftVariant.uniform, liftVariant.local);
-    for (const radialVariant of radialVariants) for (const bundleBias of bundleBiases) {
-      for (const pairSeparation of separations) {
+  const activeLiftVariants = liftVariants.filter((liftVariant) => {
+    if (homotopyPolicy === "principal-only") return liftVariant.key === "principal";
+    const lifts = liftVariant.lifts ?? liftRecord(layout, seam, corridor, liftVariant.uniform, liftVariant.local);
+    const isPrincipal = liftsUsePrincipalThroughEdges(layout, edges, lifts);
+    return homotopyPolicy === "all" || !isPrincipal;
+  });
+  const parameterCombinations = radialVariants.flatMap((radialVariant) => bundleBiases.flatMap((bundleBias) => separations.map((pairSeparation) => ({ radialVariant, bundleBias, pairSeparation })))).sort((a, b) =>
+      Math.abs(a.bundleBias) - Math.abs(b.bundleBias)
+      || a.pairSeparation - b.pairSeparation
+      || a.radialVariant - b.radialVariant);
+  const preferredCombinations = parameterCombinations.slice(0, 16);
+  const feasibilityCombinations = parameterCombinations.filter((combination) => Math.abs(combination.bundleBias) >= 1.9 && combination.pairSeparation === 0.1);
+  const activeCombinations = [...preferredCombinations, ...feasibilityCombinations, ...parameterCombinations]
+    .filter((combination, index, all) => all.findIndex((candidate) => candidate.radialVariant === combination.radialVariant && candidate.bundleBias === combination.bundleBias && candidate.pairSeparation === combination.pairSeparation) === index);
+  generation: for (const { radialVariant, bundleBias, pairSeparation } of activeCombinations) {
+    for (const liftVariant of activeLiftVariants) {
+      const lifts = liftVariant.lifts ?? liftRecord(layout, seam, corridor, liftVariant.uniform, liftVariant.local);
         const routes = edges.map((edge) => {
           const edgeBias = corridor.cycle.length === 2
-            ? corridorBias + bundleBias + (edge.edgeIndex === 0 ? pairSeparation : -pairSeparation)
+            ? (edge.edgeIndex === 0 ? pairSeparation : -pairSeparation)
             : corridorBias + bundleBias + (edge.edgeIndex - (corridor.cycle.length - 1) / 2) * pairSeparation;
           const route = throughRoute(layout, edge, lifts, edgeBias, radialVariant);
           const deckCost = Math.abs(liftVariant.uniform) + Object.values(liftVariant.local).reduce((sum, value) => sum + Math.abs(value), 0);
-          return candidate(edge, route, 0, deckCost * 2 + Math.abs(edgeBias), `through:${liftVariant.key}:${edgeBias}`, sampleCount, "cover-cubic");
+          return candidate(layout, edge, route, 0, deckCost * 2 + Math.abs(edgeBias), `through:${liftVariant.key}:${edgeBias}`, sampleCount, "cover-cubic");
         });
         const key = `through:${liftVariant.key}:${radialVariant}:${bundleBias}:${pairSeparation}`;
-        bundles.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze(routes), score: routes.reduce((sum, route) => sum + route.localScore, 0), key }));
-      }
+        const nonPrincipalThroughCount = routes.filter((route) => route.isPrincipalThroughRoute === false).length;
+        const throughAngularTravel = routes.reduce((sum, route) => sum + (route.principalWinding === undefined ? 0 : Math.abs(route.route.angularDisplacement)), 0);
+        const geometricLength = routes.reduce((sum, route) => sum + (route.routeLength ?? 0), 0);
+        if ((homotopyPolicy === "all" || (homotopyPolicy === "principal-only" ? nonPrincipalThroughCount === 0 : nonPrincipalThroughCount > 0)) && routesAreInternallyValid(routes, hardClearance, endpointRadius)) bundles.push(Object.freeze({
+          cycleIndex: corridor.cycleIndex,
+          corridor,
+          vertexLifts: lifts,
+          routes: Object.freeze(routes),
+          score: routes.reduce((sum, route) => sum + route.localScore, 0),
+          key,
+          nonPrincipalThroughCount,
+          throughAngularTravel,
+          geometricLength,
+        }));
+        if (bundles.length >= maxBundles) break generation;
     }
   }
-  return Object.freeze(bundles.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)));
+  return Object.freeze(boundedCandidates(bundles.sort((a, b) =>
+    (a.nonPrincipalThroughCount ?? 0) - (b.nonPrincipalThroughCount ?? 0)
+    || (a.throughAngularTravel ?? 0) - (b.throughAngularTravel ?? 0)
+    || (a.geometricLength ?? 0) - (b.geometricLength ?? 0)
+    || a.score - b.score
+    || a.key.localeCompare(b.key)), maxBundles, (bundle) => /:(?:-?1\.9|-?2\.4):0\.1$/.test(bundle.key)));
 }
 
 export function generateCycleBundles(
@@ -287,8 +421,13 @@ export function generateCycleBundles(
   corridor: CycleCorridor,
   edges: readonly AnnularDirectedEdge[],
   sampleCount = 65,
+  throughHomotopyPolicy: "all" | "principal-only" | "nonprincipal-only" = "all",
+  maxCandidatesPerEdge = 140,
+  hardClearance = 7.5,
+  endpointRadius = 24,
 ): readonly CycleRouteBundle[] {
+  const maxBundles = Math.max(1, Math.floor(maxCandidatesPerEdge)) * Math.max(1, edges.length);
   return corridor.kind === "through"
-    ? throughBundles(layout, seam, corridor, edges, sampleCount)
-    : pureBundles(layout, seam, corridor, edges, sampleCount);
+    ? throughBundles(layout, seam, corridor, edges, sampleCount, throughHomotopyPolicy, maxBundles, hardClearance, endpointRadius)
+    : pureBundles(layout, seam, corridor, edges, sampleCount, maxBundles);
 }

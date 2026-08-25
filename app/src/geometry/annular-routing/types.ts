@@ -29,6 +29,10 @@ export interface AnnularRouteCandidate {
   readonly key: string;
   readonly routeFamily?: "analytical-bump" | "cover-cubic";
   readonly strokeWidth?: number;
+  readonly principalWinding?: number;
+  readonly principalAngularDisplacement?: number;
+  readonly routeLength?: number;
+  readonly isPrincipalThroughRoute?: boolean;
 }
 
 export interface RoutedAnnularEdge extends AnnularRouteCandidate {}
@@ -54,6 +58,19 @@ export interface RoutingMetrics {
   readonly routeScore: number;
   readonly preferredClearanceDeficit?: number;
   readonly topologicalRejections?: number;
+  readonly principalThroughFallbackUsed?: boolean;
+  readonly throughRoutes?: readonly ThroughRouteDiagnostic[];
+}
+
+export interface ThroughRouteDiagnostic {
+  readonly edgeId: string;
+  readonly principalWinding: number;
+  readonly selectedWinding: number;
+  readonly principalAngularDisplacement: number;
+  readonly selectedAngularDisplacement: number;
+  readonly routeLength: number;
+  readonly principalClassProvenInfeasible: boolean;
+  readonly excessiveAngularTravel: boolean;
 }
 
 export interface RoutingOptions {
@@ -100,6 +117,9 @@ export interface CycleRouteBundle {
   readonly routes: readonly AnnularRouteCandidate[];
   readonly score: number;
   readonly key: string;
+  readonly nonPrincipalThroughCount?: number;
+  readonly throughAngularTravel?: number;
+  readonly geometricLength?: number;
 }
 
 export type RoutingFailureReason =

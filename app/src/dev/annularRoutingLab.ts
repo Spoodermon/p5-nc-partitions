@@ -7,9 +7,9 @@ import "./annularRoutingLab.css";
 interface Fixture { readonly name: string; readonly p: number; readonly q: number; readonly cycles: string; }
 
 const fixtures: readonly Fixture[] = [
-  { name: "Former blocker — through pair + inner 3-cycle", p: 1, q: 4, cycles: "(1 2)(3 4 5)" },
-  { name: "Former blocker — attachment at 3", p: 1, q: 4, cycles: "(1 3)(2 4 5)" },
-  { name: "Former blocker — attachment at 4", p: 1, q: 4, cycles: "(1 4)(2 3 5)" },
+  { name: "Direct through regression — attachment at 2 (former blocker)", p: 1, q: 4, cycles: "(1 2)(3 4 5)" },
+  { name: "Direct through regression — attachment at 3", p: 1, q: 4, cycles: "(1 3)(2 4 5)" },
+  { name: "Direct through regression — attachment at 4", p: 1, q: 4, cycles: "(1 4)(2 3 5)" },
   { name: "Former blocker — attachment at 5", p: 1, q: 4, cycles: "(1 5)(2 3 4)" },
   { name: "(1,1) identity", p: 1, q: 1, cycles: "(1)(2)" },
   { name: "(1,1) through transposition", p: 1, q: 1, cycles: "(1 2)" },
@@ -75,7 +75,10 @@ function drawDiagram(draw: Svg, result: RoutedAnnularSuccess): void {
     if (diagnosticToggle.checked) {
       const point = candidate.route.pointAt(0.56);
       const corridor = result.corridors[candidate.edge.cycleIndex]?.kind ?? "?";
-      draw.text(`${candidate.edge.startLabel}→${candidate.edge.endLabel} ${corridor} k${candidate.winding} L${candidate.lane} β${format(candidate.angularBias)}`)
+      const angular = candidate.principalWinding === undefined
+        ? ""
+        : ` k${candidate.winding}/p${candidate.principalWinding} Δ${format(Math.abs(candidate.route.angularDisplacement))}/${format(Math.abs(candidate.principalAngularDisplacement ?? 0))} ℓ${format(candidate.routeLength ?? 0)}`;
+      draw.text(`${candidate.edge.startLabel}→${candidate.edge.endLabel} ${corridor}${angular} L${candidate.lane} β${format(candidate.angularBias)}`)
         .font({ family: "ui-monospace, monospace", size: 11, anchor: "middle" }).fill("#374858").center(point.x, point.y - 13);
     }
   });
@@ -110,7 +113,8 @@ function render(): void {
   drawDiagram(draw, result);
   const clearance = Number.isFinite(result.diagnostics.minimumClearance) ? format(result.diagnostics.minimumClearance) : "∞";
   const corridors = result.corridors.map((corridor) => `(${corridor.cycle.join(" ")})=${corridor.kind}`).join(", ");
-  summary.textContent = `${fixture.cycles} · phase ${format(result.phase)} · seams O${result.outerSeam}/I${result.innerSeam} · ${corridors} · ${result.routes.length} edges · hard collisions ${result.diagnostics.hardCollisionCount} · minimum clearance ${clearance} · ${format(result.diagnostics.elapsedMilliseconds)} ms · ${result.diagnostics.searchNodes} nodes`;
+  const homotopy = result.diagnostics.principalThroughFallbackUsed ? "non-principal fallback proven necessary" : "principal through homotopy";
+  summary.textContent = `${fixture.cycles} · phase ${format(result.phase)} · seams O${result.outerSeam}/I${result.innerSeam} · ${corridors} · ${homotopy} · ${result.routes.length} edges · hard collisions ${result.diagnostics.hardCollisionCount} · minimum clearance ${clearance} · ${format(result.diagnostics.elapsedMilliseconds)} ms · ${result.diagnostics.searchNodes} nodes`;
 }
 
 [selector, directionToggle, diagnosticToggle].forEach((control) => control.addEventListener("change", render));

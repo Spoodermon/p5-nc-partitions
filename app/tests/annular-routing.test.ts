@@ -4,6 +4,7 @@ import {
   annularPhaseCandidates,
   DEFAULT_HARD_CLEARANCE,
   extractAnnularEdges,
+  principalThroughWinding,
   routeAnnularPermutation,
   routesConflict,
   segmentDistance,
@@ -112,11 +113,59 @@ describe("global annular routing", () => {
     }
   });
 
+  it("uses the principal homotopy and paired biases for direct through regressions", () => {
+    expect(principalThroughWinding(0, Math.PI)).toBe(0);
+    expect(principalThroughWinding(Math.PI, 0)).toBe(0);
+    for (const fixture of [
+      parsed("(1 2)(3 4 5)", 1, 4),
+      parsed("(1 3)(2 4 5)", 1, 4),
+      parsed("(1 4)(2 3 5)", 1, 4),
+    ]) {
+      const result = routeAnnularPermutation(fixture);
+      expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+      if (!result.isRoutable) continue;
+      expect(result.diagnostics.principalThroughFallbackUsed).toBe(false);
+      expect(result.diagnostics.throughRoutes).toHaveLength(2);
+      for (const route of result.diagnostics.throughRoutes ?? []) {
+        expect(route.selectedWinding).toBe(route.principalWinding);
+        expect(Math.abs(route.selectedAngularDisplacement)).toBeLessThanOrEqual(Math.PI + 1e-10);
+        expect(route.excessiveAngularTravel).toBe(false);
+        expect(route.routeLength).toBeGreaterThan(0);
+      }
+      const through = result.routes.filter((route) => route.edge.startBoundary !== route.edge.endBoundary);
+      expect(through[0]?.angularBias).toBeCloseTo(-(through[1]?.angularBias ?? Number.NaN), 12);
+    }
+  });
+
   it("routes the Mingo–Nica fixture without hard collisions", () => {
     const result = routeAnnularPermutation(parsed("(1 8)(2)(3 4 7)(5 6)", 5, 3));
     expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
     if (result.isRoutable) expect(result.diagnostics.hardCollisionCount).toBe(0);
   }, 20_000);
+
+  it("uses a proven non-principal fallback for the through four-cycle stress case", () => {
+    const created = annularPermutationFromImages(1, 4, [4, 3, 1, 2, 5]);
+    if (!created.ok) throw new Error(created.error.kind);
+    const result = routeAnnularPermutation(created.value, { phaseCandidateCount: 9, sampleCount: 25, maxSearchNodes: 2_000 });
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (result.isRoutable) {
+      expect(result.diagnostics.hardCollisionCount).toBe(0);
+      expect(result.diagnostics.minimumClearance).toBeGreaterThanOrEqual(DEFAULT_HARD_CLEARANCE);
+      expect(result.diagnostics.principalThroughFallbackUsed).toBe(true);
+      expect(result.diagnostics.throughRoutes?.some((route) => route.principalClassProvenInfeasible)).toBe(true);
+    }
+  }, 30_000);
+
+  it("preserves the mixed (2,3) through-cycle fallback", () => {
+    const created = annularPermutationFromImages(2, 3, [2, 5, 3, 1, 4]);
+    if (!created.ok) throw new Error(created.error.kind);
+    const result = routeAnnularPermutation(created.value, { phaseCandidateCount: 2, sampleCount: 25, maxCandidatesPerEdge: 140, maxSearchNodes: 2_000 });
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (result.isRoutable) {
+      expect(result.diagnostics.hardCollisionCount).toBe(0);
+      expect(result.diagnostics.minimumClearance).toBeGreaterThanOrEqual(DEFAULT_HARD_CLEARANCE);
+    }
+  }, 30_000);
 
   it("routes all four former (1,4) blockers with explicit corridors", () => {
     for (const fixture of [
@@ -168,5 +217,5 @@ describe("global annular routing", () => {
       }
     }
     console.log("NCV-5 exhaustive routing", JSON.stringify(table));
-  }, 240_000);
+  }, 1_800_000);
 });

@@ -1,6 +1,6 @@
 import { SVG, type Svg } from "@svgdotjs/svg.js";
 import { ANNULAR_VIEWBOX_SIZE, coverRadius, pointAtPolar, type AnnularRoute, type Point, type Vector } from "../geometry/annular";
-import { INNER_COLLAR_CEILING, OUTER_COLLAR_FLOOR, routeAnnularPermutation, type RoutedAnnularSuccess } from "../geometry/annular-routing";
+import { annularCycleFillRegions, INNER_COLLAR_CEILING, OUTER_COLLAR_FLOOR, routeAnnularPermutation, type RoutedAnnularSuccess } from "../geometry/annular-routing";
 import { parseAnnularPermutation } from "../math";
 import "./annularRoutingLab.css";
 
@@ -15,8 +15,14 @@ const fixtures: readonly Fixture[] = [
   { name: "(1,1) through transposition", p: 1, q: 1, cycles: "(1 2)" },
   { name: "(2,2) connected representative", p: 2, q: 2, cycles: "(1 3 2)(4)" },
   { name: "Outer two-cycle", p: 3, q: 2, cycles: "(1 2)(3)(4)(5)" },
+  { name: "Outer three-cycle", p: 4, q: 3, cycles: "(1 2 3)(4)(5)(6)(7)" },
+  { name: "Outer four-cycle", p: 5, q: 3, cycles: "(1 2 3 4)(5)(6)(7)(8)" },
   { name: "Inner two-cycle", p: 3, q: 2, cycles: "(1)(2)(3)(4 5)" },
+  { name: "Inner three-cycle", p: 3, q: 4, cycles: "(1)(2)(3)(4 5 6)(7)" },
+  { name: "Inner four-cycle", p: 3, q: 5, cycles: "(1)(2)(3)(4 5 6 7)(8)" },
   { name: "Through two-cycle", p: 3, q: 2, cycles: "(1 4)(2)(3)(5)" },
+  { name: "Through three-cycle", p: 3, q: 3, cycles: "(1 4 5)(2)(3)(6)" },
+  { name: "Through four-cycle", p: 3, q: 3, cycles: "(1 4 5 6)(2)(3)" },
   { name: "Disconnected nontrivial", p: 4, q: 3, cycles: "(1 2 3 4)(5 6 7)" },
   { name: "Mingo–Nica (5,3)", p: 5, q: 3, cycles: "(1 8)(2)(3 4 7)(5 6)" },
   { name: "Dense connected (3,3)", p: 3, q: 3, cycles: "(1 2)(3 4 5 6)" },
@@ -34,6 +40,12 @@ const selector = required<HTMLSelectElement>("#fixture");
 const directionToggle = required<HTMLInputElement>("#directions");
 const ribbonFillToggle = required<HTMLInputElement>("#ribbon-fill");
 const diagnosticToggle = required<HTMLInputElement>("#diagnostics");
+const cycleEdgeThickness = required<HTMLInputElement>("#cycle-edge-thickness");
+const cycleEdgeThicknessOutput = required<HTMLOutputElement>("#cycle-edge-thickness-output");
+const outerBoundaryThickness = required<HTMLInputElement>("#outer-boundary-thickness");
+const outerBoundaryThicknessOutput = required<HTMLOutputElement>("#outer-boundary-thickness-output");
+const innerBoundaryThickness = required<HTMLInputElement>("#inner-boundary-thickness");
+const innerBoundaryThicknessOutput = required<HTMLOutputElement>("#inner-boundary-thickness-output");
 const summary = required<HTMLDivElement>("#summary");
 
 fixtures.forEach((fixture, index) => selector.add(new Option(fixture.name, String(index))));
@@ -49,26 +61,20 @@ function arrowPath(point: Point, tangent: Vector): string {
   const normal = { x: -unit.y, y: unit.x };
   return `M ${format(point.x + unit.x * 10)} ${format(point.y + unit.y * 10)} L ${format(point.x - unit.x * 7 + normal.x * 5)} ${format(point.y - unit.y * 7 + normal.y * 5)} L ${format(point.x - unit.x * 7 - normal.x * 5)} ${format(point.y - unit.y * 7 - normal.y * 5)} Z`;
 }
-function ribbonPath(forward: AnnularRoute, returning: AnnularRoute): string {
-  const points = [
-    ...Array.from({ length: 81 }, (_, index) => forward.pointAt(index / 80)),
-    ...Array.from({ length: 81 }, (_, index) => returning.pointAt(index / 80)),
-  ];
+function closedPath(points: readonly Point[]): string {
   return `${points.map((point, index) => `${index === 0 ? "M" : "L"} ${format(point.x)} ${format(point.y)}`).join(" ")} Z`;
 }
 function drawDiagram(draw: Svg, result: RoutedAnnularSuccess): void {
   const { layout } = result;
-  draw.circle(layout.outerRadius * 2).center(500, 500).fill("#fffdf9").stroke({ color: "#aeb9c0", width: 2.2 });
-  draw.circle(layout.innerRadius * 2).center(500, 500).fill("#edf1f3").stroke({ color: "#aeb9c0", width: 2.2 });
+  draw.circle(layout.outerRadius * 2).center(500, 500).fill("#fffdf9").stroke({ color: "#aeb9c0", width: Number(outerBoundaryThickness.value) }).attr({ "data-boundary": "outer" });
+  draw.circle(layout.innerRadius * 2).center(500, 500).fill("#edf1f3").stroke({ color: "#aeb9c0", width: Number(innerBoundaryThickness.value) }).attr({ "data-boundary": "inner" });
   if (ribbonFillToggle.checked) {
-    const cycleIndices = [...new Set(result.routes
-      .filter((candidate) => candidate.edge.cycleLength === 2 && candidate.edge.startBoundary === candidate.edge.endBoundary)
-      .map((candidate) => candidate.edge.cycleIndex))];
-    for (const cycleIndex of cycleIndices) {
-      const forward = result.routes.find((candidate) => candidate.edge.cycleIndex === cycleIndex && candidate.edge.role === "forward");
-      const returning = result.routes.find((candidate) => candidate.edge.cycleIndex === cycleIndex && candidate.edge.role === "return");
-      if (!forward || !returning) continue;
-      draw.path(ribbonPath(forward.route, returning.route)).fill(palette[cycleIndex % palette.length] as string).opacity(0.14).stroke("none");
+    for (const region of annularCycleFillRegions(result.routes)) {
+      draw.path(closedPath(region.points))
+        .attr({ "data-cycle-fill": String(region.cycleIndex) })
+        .fill(palette[region.cycleIndex % palette.length] as string)
+        .opacity(0.14)
+        .stroke("none");
     }
   }
   if (diagnosticToggle.checked) {
@@ -89,7 +95,7 @@ function drawDiagram(draw: Svg, result: RoutedAnnularSuccess): void {
   }
   result.routes.forEach((candidate) => {
     const color = palette[candidate.edge.cycleIndex % palette.length] as string;
-    draw.path(sampledPath(candidate.route)).fill("none").stroke({ color, width: 3.4, linecap: "round", linejoin: "round" });
+    draw.path(sampledPath(candidate.route)).fill("none").stroke({ color, width: Number(cycleEdgeThickness.value), linecap: "round", linejoin: "round" }).attr({ "data-cycle-edge": candidate.edge.id });
     if (directionToggle.checked) draw.path(arrowPath(candidate.route.pointAt(0.5), candidate.route.tangentAt(0.5))).fill(color);
     if (diagnosticToggle.checked) {
       const point = candidate.route.pointAt(0.56);
@@ -137,4 +143,12 @@ function render(): void {
 }
 
 [selector, directionToggle, ribbonFillToggle, diagnosticToggle].forEach((control) => control.addEventListener("change", render));
+for (const [control, output] of [
+  [cycleEdgeThickness, cycleEdgeThicknessOutput],
+  [outerBoundaryThickness, outerBoundaryThicknessOutput],
+  [innerBoundaryThickness, innerBoundaryThicknessOutput],
+] as const) control.addEventListener("input", () => {
+  output.value = control.value;
+  render();
+});
 render();

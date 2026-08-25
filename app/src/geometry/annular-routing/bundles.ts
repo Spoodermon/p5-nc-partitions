@@ -115,6 +115,16 @@ function normalizedLiftAngles(
   return Object.freeze([startAngle, endLift - deckShift]);
 }
 
+function followsContiguousBoundaryChain(layout: AnnularLayout, corridor: CycleCorridor): boolean {
+  const boundaryStart = corridor.kind === "outer-collar" ? 1 : layout.p + 1;
+  const boundarySize = corridor.kind === "outer-collar" ? layout.p : layout.q;
+  return corridor.cycle.slice(0, -1).every((label, index) => {
+    const next = corridor.cycle[index + 1];
+    const expected = boundaryStart + ((label - boundaryStart + 1) % boundarySize);
+    return next === expected;
+  });
+}
+
 function liftsUsePrincipalThroughEdges(
   layout: AnnularLayout,
   edges: readonly AnnularDirectedEdge[],
@@ -142,7 +152,7 @@ function pureRoute(
 ): AnnularRoute {
   const [start, rawEnd] = normalizedLiftAngles(layout, edge, lifts);
   let end = rawEnd + edgeDeckOffset * TWO_PI;
-  let effectiveDeckOffset = edgeDeckOffset;
+  const effectiveDeckOffset = edgeDeckOffset;
   if (edge.cycleLength === 2) {
     // A boundary transposition is a narrow oriented ribbon: both directions
     // use one shared angular track in reverse, with radial depth separating
@@ -158,6 +168,30 @@ function pureRoute(
     if (Math.abs(sharedDisplacement + Math.PI) < 1e-12 && rawDisplacement > 0) sharedDisplacement = Math.PI;
     sharedDisplacement += edgeDeckOffset * TWO_PI;
     end = start + (edge.edgeIndex === 0 ? sharedDisplacement : -sharedDisplacement);
+  } else if (edge.cycleLength > 2 && followsContiguousBoundaryChain(layout, corridor)) {
+    // A pure boundary cycle is a ribbon around an open angular chain.  Its
+    // first n-1 edges advance in the boundary's native direction; the closing
+    // edge retraces that whole chain in reverse on a deeper radial lane.  It
+    // must not close across the complementary interval, where an omitted
+    // singleton or another collar may live.
+    const direction = edge.startBoundary === "outer" ? 1 : -1;
+    const directedDisplacement = (startLabel: number, endLabel: number): number => {
+      const startAngle = layout.vertices[startLabel - 1]?.angle;
+      const endAngle = layout.vertices[endLabel - 1]?.angle;
+      if (startAngle === undefined || endAngle === undefined) throw new Error("boundary-cycle layout invariant violated");
+      let displacement = endAngle - startAngle;
+      while (direction * displacement <= 1e-12) displacement += direction * TWO_PI;
+      return displacement;
+    };
+    const forwardTravel = corridor.cycle.slice(0, -1).reduce((sum, label, index) =>
+      sum + directedDisplacement(label, corridor.cycle[index + 1] as number), 0);
+    let displacement = edge.role === "return"
+      ? -forwardTravel
+      : directedDisplacement(edge.startLabel, edge.endLabel);
+    // Collision-avoidance deck fallbacks may add a turn, but never reverse the
+    // established orientation of this edge.
+    displacement += Math.sign(displacement) * Math.abs(edgeDeckOffset) * TWO_PI;
+    end = start + displacement;
   }
   const displacement = end - start;
   const twoCycleLaneStep = corridor.kind === "inner-collar" ? 0.115 : 0.08;
@@ -172,8 +206,10 @@ function pureRoute(
     ? corridor.kind === "inner-collar"
       ? (edge.edgeIndex === 0 ? 0 : 0.19)
       : (edge.edgeIndex === 0 ? 0.23 : 0.02)
-    : Math.min(0.23, 1.84 * spanFraction ** 3);
-  const maximumDepth = edge.cycleLength === 2 ? 0.5 : 0.27;
+    : edge.role === "return"
+      ? Math.min(0.42, 1.84 * spanFraction ** 3)
+      : Math.min(0.23, 1.84 * spanFraction ** 3);
+  const maximumDepth = edge.cycleLength === 2 || edge.role === "return" ? 0.5 : 0.27;
   const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth);
   const u = corridor.kind === "outer-collar" ? 1 - depth : depth;
   return createCoverCubicAnnularRoute(layout, {
@@ -327,7 +363,8 @@ function pureBundles(
       const routes = edges.map((edge) => {
         const pairedBias = edge.cycleLength === 2 ? edgeSpacing : (edge.edgeIndex - (edge.cycleLength - 1) / 2) * edgeSpacing;
         const route = pureRoute(layout, edge, lifts, corridor, laneVariant, pairedBias, edgeDeckOffsets[edge.edgeIndex] ?? 0);
-        const homotopyPenalty = edge.cycleLength === 2 ? Math.abs(edgeDeckOffsets[edge.edgeIndex] ?? 0) * 2 : 0;
+        const preservesChainRibbon = edge.cycleLength === 2 || followsContiguousBoundaryChain(layout, corridor);
+        const homotopyPenalty = preservesChainRibbon ? Math.abs(edgeDeckOffsets[edge.edgeIndex] ?? 0) * 2 : 0;
         return candidate(layout, edge, route, laneVariant + (edge.role === "return" ? 1 : 0), laneVariant + Math.abs(pairedBias) + homotopyPenalty, `pure:${laneVariant}:${pairedBias}`, sampleCount, "cover-cubic");
       });
       const key = `pure:${edgeDeckOffsets.join(",")}:${laneVariant}:${edgeSpacing}`;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analyzeRoutePair,
+  annularCycleFillRegions,
   annularPhaseCandidates,
   DEFAULT_HARD_CLEARANCE,
   extractAnnularEdges,
@@ -78,6 +79,70 @@ describe("global annular routing", () => {
       expect(radiusAt(returning, 1 - t) - radiusAt(forward, t)).toBeGreaterThan(DEFAULT_HARD_CLEARANCE);
     }
   });
+
+  it("reverses each nontrivial boundary-cycle return along its forward chain", () => {
+    const result = routeAnnularPermutation(parsed("(1 2 3 4)(5 6 7)", 4, 3));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    const outer = result.routes.filter((route) => route.edge.cycleIndex === 0);
+    const inner = result.routes.filter((route) => route.edge.cycleIndex === 1);
+    expect(outer).toHaveLength(4);
+    expect(inner).toHaveLength(3);
+    expect(outer.filter((route) => route.edge.role === "forward").every((route) => route.route.angularDisplacement > 0)).toBe(true);
+    expect(inner.filter((route) => route.edge.role === "forward").every((route) => route.route.angularDisplacement < 0)).toBe(true);
+    expect(outer.find((route) => route.edge.role === "return")?.route.angularDisplacement).toBeLessThan(0);
+    expect(inner.find((route) => route.edge.startLabel === 7 && route.edge.endLabel === 5)?.route.angularDisplacement).toBeGreaterThan(0);
+    expect(outer.reduce((sum, route) => sum + route.route.angularDisplacement, 0)).toBeCloseTo(0, 10);
+    expect(inner.reduce((sum, route) => sum + route.route.angularDisplacement, 0)).toBeCloseTo(0, 10);
+  });
+
+  it("keeps an omitted inner singleton outside a four-cycle return ribbon", () => {
+    const result = routeAnnularPermutation(parsed("(1)(2)(3)(4 5 6 7)(8)", 3, 5));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    const cycle = result.routes.filter((route) => route.edge.cycleIndex === 3);
+    const forwardTravel = cycle
+      .filter((route) => route.edge.role === "forward")
+      .reduce((sum, route) => sum + route.route.angularDisplacement, 0);
+    const returning = cycle.find((route) => route.edge.startLabel === 7 && route.edge.endLabel === 4);
+    expect(forwardTravel).toBeLessThan(0);
+    expect(returning?.route.angularDisplacement).toBeCloseTo(-forwardTravel, 10);
+    expect(returning?.route.angularDisplacement).toBeGreaterThan(0);
+  });
+
+  it("builds a positive-area fill region for every routed cycle shape", () => {
+    for (const [text, p, q] of [
+      ["(1)(2)", 1, 1],
+      ["(1 2)", 1, 1],
+      ["(1 2 3 4)(5 6 7)", 4, 3],
+      ["(1)(2 3)(4 5 6 7)", 4, 3],
+    ] as const) {
+      const result = routeAnnularPermutation(parsed(text, p, q));
+      expect(result.isRoutable, `${text}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
+      if (!result.isRoutable) continue;
+      const regions = annularCycleFillRegions(result.routes);
+      expect(regions).toHaveLength(result.corridors.length);
+      expect(regions.every((region) => region.points.length >= 3 && region.area > 1)).toBe(true);
+    }
+  }, 30_000);
+
+  it("routes and fills the length three and four boundary/through lab matrix", () => {
+    for (const [text, p, q] of [
+      ["(1 2 3)(4)(5)(6)(7)", 4, 3],
+      ["(1 2 3 4)(5)(6)(7)(8)", 5, 3],
+      ["(1)(2)(3)(4 5 6)(7)", 3, 4],
+      ["(1)(2)(3)(4 5 6 7)(8)", 3, 5],
+      ["(1 4 5)(2)(3)(6)", 3, 3],
+      ["(1 4 5 6)(2)(3)", 3, 3],
+    ] as const) {
+      const result = routeAnnularPermutation(parsed(text, p, q));
+      expect(result.isRoutable, `${text}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
+      if (!result.isRoutable) continue;
+      const regions = annularCycleFillRegions(result.routes);
+      expect(regions).toHaveLength(result.corridors.length);
+      expect(regions.every((region) => region.area > 1)).toBe(true);
+    }
+  }, 30_000);
 
   it("detects intersections and orders segment clearances", () => {
     const a = { x: 0, y: 0 }, b = { x: 10, y: 10 };

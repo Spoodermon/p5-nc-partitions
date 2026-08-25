@@ -52,22 +52,33 @@ function solveBundleState(bundleSets: readonly (readonly CycleRouteBundle[])[], 
   const assignedRoutes: AnnularRouteCandidate[] = [];
   let nodes = 0;
   let result: StateSolution | null = null;
-  const visit = (index: number, score: number): void => {
+  const visit = (remaining: readonly number[], score: number): void => {
     if (result || nodes >= maxNodes) return;
     nodes += 1;
-    if (index === ordered.length) {
+    if (remaining.length === 0) {
       result = Object.freeze({ routes: Object.freeze([...assignedRoutes].sort((a, b) => a.edge.cycleIndex - b.edge.cycleIndex || a.edge.edgeIndex - b.edge.edgeIndex)), bundles: Object.freeze([...assignedBundles]), score, nodes });
       return;
     }
-    for (const bundle of ordered[index] ?? []) {
-      if (bundle.routes.some((route) => assignedRoutes.some((assigned) => routesConflict(assigned, route, hard, endpointRadius)))) continue;
+    let selectedPosition = 0;
+    let compatible: readonly CycleRouteBundle[] = [];
+    for (let position = 0; position < remaining.length; position += 1) {
+      const bundles = (ordered[remaining[position] as number] ?? []).filter((bundle) =>
+        bundle.routes.every((route) => assignedRoutes.every((assigned) => !routesConflict(assigned, route, hard, endpointRadius))));
+      if (position === 0 || bundles.length < compatible.length) {
+        selectedPosition = position;
+        compatible = bundles;
+      }
+      if (compatible.length === 0) return;
+    }
+    const nextRemaining = remaining.filter((_, position) => position !== selectedPosition);
+    for (const bundle of compatible) {
       assignedBundles.push(bundle); assignedRoutes.push(...bundle.routes);
-      visit(index + 1, score + bundle.score);
+      visit(nextRemaining, score + bundle.score);
       assignedRoutes.splice(assignedRoutes.length - bundle.routes.length, bundle.routes.length); assignedBundles.pop();
       if (result) return;
     }
   };
-  visit(0, 0);
+  visit(ordered.map((_, index) => index), 0);
   return result;
 }
 

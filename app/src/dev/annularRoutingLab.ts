@@ -32,6 +32,7 @@ function required<T extends Element>(selector: string): T {
 const container = required<HTMLDivElement>("#annular-routing-lab");
 const selector = required<HTMLSelectElement>("#fixture");
 const directionToggle = required<HTMLInputElement>("#directions");
+const ribbonFillToggle = required<HTMLInputElement>("#ribbon-fill");
 const diagnosticToggle = required<HTMLInputElement>("#diagnostics");
 const summary = required<HTMLDivElement>("#summary");
 
@@ -48,10 +49,28 @@ function arrowPath(point: Point, tangent: Vector): string {
   const normal = { x: -unit.y, y: unit.x };
   return `M ${format(point.x + unit.x * 10)} ${format(point.y + unit.y * 10)} L ${format(point.x - unit.x * 7 + normal.x * 5)} ${format(point.y - unit.y * 7 + normal.y * 5)} L ${format(point.x - unit.x * 7 - normal.x * 5)} ${format(point.y - unit.y * 7 - normal.y * 5)} Z`;
 }
+function ribbonPath(forward: AnnularRoute, returning: AnnularRoute): string {
+  const points = [
+    ...Array.from({ length: 81 }, (_, index) => forward.pointAt(index / 80)),
+    ...Array.from({ length: 81 }, (_, index) => returning.pointAt(index / 80)),
+  ];
+  return `${points.map((point, index) => `${index === 0 ? "M" : "L"} ${format(point.x)} ${format(point.y)}`).join(" ")} Z`;
+}
 function drawDiagram(draw: Svg, result: RoutedAnnularSuccess): void {
   const { layout } = result;
   draw.circle(layout.outerRadius * 2).center(500, 500).fill("#fffdf9").stroke({ color: "#aeb9c0", width: 2.2 });
   draw.circle(layout.innerRadius * 2).center(500, 500).fill("#edf1f3").stroke({ color: "#aeb9c0", width: 2.2 });
+  if (ribbonFillToggle.checked) {
+    const cycleIndices = [...new Set(result.routes
+      .filter((candidate) => candidate.edge.cycleLength === 2 && candidate.edge.startBoundary === candidate.edge.endBoundary)
+      .map((candidate) => candidate.edge.cycleIndex))];
+    for (const cycleIndex of cycleIndices) {
+      const forward = result.routes.find((candidate) => candidate.edge.cycleIndex === cycleIndex && candidate.edge.role === "forward");
+      const returning = result.routes.find((candidate) => candidate.edge.cycleIndex === cycleIndex && candidate.edge.role === "return");
+      if (!forward || !returning) continue;
+      draw.path(ribbonPath(forward.route, returning.route)).fill(palette[cycleIndex % palette.length] as string).opacity(0.14).stroke("none");
+    }
+  }
   if (diagnosticToggle.checked) {
     for (const [u, color] of [[OUTER_COLLAR_FLOOR, "#285f6b"], [INNER_COLLAR_CEILING, "#9a552d"]] as const) {
       draw.circle(coverRadius(layout, u) * 2).center(500, 500).fill("none").stroke({ color, width: 1, dasharray: "7 8", opacity: 0.32 });
@@ -117,5 +136,5 @@ function render(): void {
   summary.textContent = `${fixture.cycles} · phase ${format(result.phase)} · seams O${result.outerSeam}/I${result.innerSeam} · ${corridors} · ${homotopy} · ${result.routes.length} edges · hard collisions ${result.diagnostics.hardCollisionCount} · minimum clearance ${clearance} · ${format(result.diagnostics.elapsedMilliseconds)} ms · ${result.diagnostics.searchNodes} nodes`;
 }
 
-[selector, directionToggle, diagnosticToggle].forEach((control) => control.addEventListener("change", render));
+[selector, directionToggle, ribbonFillToggle, diagnosticToggle].forEach((control) => control.addEventListener("change", render));
 render();

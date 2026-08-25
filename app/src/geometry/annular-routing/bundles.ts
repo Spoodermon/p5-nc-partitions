@@ -143,24 +143,26 @@ function pureRoute(
   const [start, rawEnd] = normalizedLiftAngles(layout, edge, lifts);
   let end = rawEnd + edgeDeckOffset * TWO_PI;
   let effectiveDeckOffset = edgeDeckOffset;
-  if (corridor.kind === "inner-collar" && edge.cycleLength === 2) {
-    // A transposition is a narrow oriented ribbon: both directions use the
-    // same angular trace in reverse, with radial depth distinguishing them.
-    effectiveDeckOffset = 0;
-    if (edge.edgeIndex === 0) end = rawEnd;
-    else {
-      const reverseStart = layout.vertices[edge.endLabel - 1]?.angle;
-      const reverseStartLift = lifts[edge.endLabel];
-      const reverseEndLift = lifts[edge.startLabel];
-      if (reverseStart === undefined || reverseStartLift === undefined || reverseEndLift === undefined) {
-        throw new Error("inner two-cycle lift invariant violated");
-      }
-      const reverseDeckShift = reverseStartLift - reverseStart;
-      end = start - (reverseEndLift - reverseDeckShift - reverseStart);
-    }
+  if (edge.cycleLength === 2) {
+    // A boundary transposition is a narrow oriented ribbon: both directions
+    // use one shared angular track in reverse, with radial depth separating
+    // them. Prefer the shortest track; paired deck shifts remain available as
+    // collision-avoidance fallbacks without breaking the ribbon topology.
+    const forwardStartLabel = edge.edgeIndex === 0 ? edge.startLabel : edge.endLabel;
+    const forwardEndLabel = edge.edgeIndex === 0 ? edge.endLabel : edge.startLabel;
+    const forwardStart = layout.vertices[forwardStartLabel - 1]?.angle;
+    const forwardEnd = layout.vertices[forwardEndLabel - 1]?.angle;
+    if (forwardStart === undefined || forwardEnd === undefined) throw new Error("two-cycle layout invariant violated");
+    const rawDisplacement = forwardEnd - forwardStart;
+    let sharedDisplacement = ((rawDisplacement + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI;
+    if (Math.abs(sharedDisplacement + Math.PI) < 1e-12 && rawDisplacement > 0) sharedDisplacement = Math.PI;
+    sharedDisplacement += edgeDeckOffset * TWO_PI;
+    end = start + (edge.edgeIndex === 0 ? sharedDisplacement : -sharedDisplacement);
   }
   const displacement = end - start;
-  const baseDepth = 0.04 + corridor.nestingDepth * 0.03 + laneVariant * 0.02;
+  const twoCycleLaneStep = corridor.kind === "inner-collar" ? 0.115 : 0.08;
+  const laneStep = edge.cycleLength === 2 ? twoCycleLaneStep : 0.02;
+  const baseDepth = 0.04 + corridor.nestingDepth * 0.03 + laneVariant * laneStep;
   // Longer boundary intervals form the inner side of a contractible collar
   // polygon. Giving them a deeper radial lane prevents the complementary
   // short edges from cutting across them; the ordering is derived from the
@@ -168,10 +170,10 @@ function pureRoute(
   const spanFraction = Math.min(1, Math.abs(displacement) / TWO_PI);
   const spanDepth = edge.cycleLength === 2
     ? corridor.kind === "inner-collar"
-      ? (edge.edgeIndex === 0 ? 0.23 : 0.42)
+      ? (edge.edgeIndex === 0 ? 0 : 0.19)
       : (edge.edgeIndex === 0 ? 0.23 : 0.02)
     : Math.min(0.23, 1.84 * spanFraction ** 3);
-  const maximumDepth = edge.cycleLength === 2 && corridor.kind === "inner-collar" ? 0.5 : 0.27;
+  const maximumDepth = edge.cycleLength === 2 ? 0.5 : 0.27;
   const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth);
   const u = corridor.kind === "outer-collar" ? 1 - depth : depth;
   return createCoverCubicAnnularRoute(layout, {
@@ -307,22 +309,26 @@ function pureBundles(
     return Object.freeze(boundedCandidates(variants.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)), maxBundles));
   }
   const bundles: CycleRouteBundle[] = [];
-  const patterns: number[][] = [Array(edges.length).fill(0)];
-  for (let first = 0; first < edges.length; first += 1) {
-    for (const sign of [-1, 1]) {
-      const single = Array(edges.length).fill(0); single[first] = sign; patterns.push(single);
-    }
-    for (let second = 0; second < edges.length; second += 1) if (first !== second) {
-      const paired = Array(edges.length).fill(0); paired[first] = -1; paired[second] = 1; patterns.push(paired);
+  const isTwoCycle = edges.length === 2 && edges.every((edge) => edge.cycleLength === 2);
+  const patterns: number[][] = isTwoCycle ? [[0, 0], [-1, -1], [1, 1]] : [Array(edges.length).fill(0)];
+  if (!isTwoCycle) {
+    for (let first = 0; first < edges.length; first += 1) {
+      for (const sign of [-1, 1]) {
+        const single = Array(edges.length).fill(0); single[first] = sign; patterns.push(single);
+      }
+      for (let second = 0; second < edges.length; second += 1) if (first !== second) {
+        const paired = Array(edges.length).fill(0); paired[first] = -1; paired[second] = 1; patterns.push(paired);
+      }
     }
   }
   for (const edgeDeckOffsets of patterns) {
-   for (const laneVariant of [0, 1, 2]) {
-    for (const edgeSpacing of [0, 0.16, 0.28]) {
+   for (const laneVariant of isTwoCycle ? [0, 1, 2, 3] : [0, 1, 2]) {
+    for (const edgeSpacing of isTwoCycle ? [0, 0.28, -0.28, 0.75, -0.75] : [0, 0.16, 0.28]) {
       const routes = edges.map((edge) => {
-        const pairedBias = edge.cycleLength === 2 ? 0 : (edge.edgeIndex - (edge.cycleLength - 1) / 2) * edgeSpacing;
+        const pairedBias = edge.cycleLength === 2 ? edgeSpacing : (edge.edgeIndex - (edge.cycleLength - 1) / 2) * edgeSpacing;
         const route = pureRoute(layout, edge, lifts, corridor, laneVariant, pairedBias, edgeDeckOffsets[edge.edgeIndex] ?? 0);
-        return candidate(layout, edge, route, laneVariant + (edge.role === "return" ? 1 : 0), laneVariant + Math.abs(pairedBias), `pure:${laneVariant}:${pairedBias}`, sampleCount, "cover-cubic");
+        const homotopyPenalty = edge.cycleLength === 2 ? Math.abs(edgeDeckOffsets[edge.edgeIndex] ?? 0) * 2 : 0;
+        return candidate(layout, edge, route, laneVariant + (edge.role === "return" ? 1 : 0), laneVariant + Math.abs(pairedBias) + homotopyPenalty, `pure:${laneVariant}:${pairedBias}`, sampleCount, "cover-cubic");
       });
       const key = `pure:${edgeDeckOffsets.join(",")}:${laneVariant}:${edgeSpacing}`;
       bundles.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze(routes), score: routes.reduce((sum, route) => sum + route.localScore, 0), key }));

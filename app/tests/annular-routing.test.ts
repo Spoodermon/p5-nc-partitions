@@ -60,6 +60,25 @@ describe("global annular routing", () => {
     }
   });
 
+  it("routes outer two-cycles as shortest-track ribbons", () => {
+    const result = routeAnnularPermutation(parsed("(1 2)(3)(4)(5)", 3, 2));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    const forward = result.routes.find((route) => route.edge.startLabel === 1 && route.edge.endLabel === 2);
+    const returning = result.routes.find((route) => route.edge.startLabel === 2 && route.edge.endLabel === 1);
+    if (!forward || !returning) throw new Error("missing outer two-cycle routes");
+    expect(Math.abs(forward.route.angularDisplacement)).toBeLessThanOrEqual(Math.PI);
+    expect(returning.route.angularDisplacement).toBeCloseTo(-forward.route.angularDisplacement, 12);
+    const radiusAt = (route: typeof forward, t: number) => Math.hypot(route.route.pointAt(t).x - result.layout.center.x, route.route.pointAt(t).y - result.layout.center.y);
+    for (const t of [0.25, 0.5, 0.75]) {
+      const forwardTheta = forward.route.coverPointAt(t).theta;
+      const returnTheta = returning.route.coverPointAt(1 - t).theta;
+      const angularSeparation = Math.abs(Math.atan2(Math.sin(forwardTheta - returnTheta), Math.cos(forwardTheta - returnTheta)));
+      expect(angularSeparation).toBeLessThan(1e-10);
+      expect(radiusAt(returning, 1 - t) - radiusAt(forward, t)).toBeGreaterThan(DEFAULT_HARD_CLEARANCE);
+    }
+  });
+
   it("detects intersections and orders segment clearances", () => {
     const a = { x: 0, y: 0 }, b = { x: 10, y: 10 };
     expect(segmentDistance(a, b, { x: 0, y: 10 }, { x: 10, y: 0 })).toBe(0);
@@ -185,24 +204,24 @@ describe("global annular routing", () => {
     }
   }, 30_000);
 
-  it("preserves the crowded (1,4) singleton fixture", () => {
-    const created = annularPermutationFromImages(1, 4, [3, 1, 4, 2, 5]);
-    if (!created.ok) throw new Error(created.error.kind);
-    let result = routeAnnularPermutation(created.value, {
-      phaseCandidateCount: 2,
-      sampleCount: 25,
-      maxCandidatesPerEdge: 140,
-      maxSearchNodes: 2_000,
-    });
-    if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
-    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
-    if (result.isRoutable) {
-      const singleton = result.routes.find((route) => route.edge.role === "singleton");
-      if (!singleton) throw new Error("missing crowded singleton route");
-      expect(Math.abs(singleton.angularBias)).toBeGreaterThanOrEqual(0.08);
-      const start = singleton.route.pointAt(0);
-      const maximumDisplacement = Math.max(...[0.25, 0.5, 0.75].map((t) => Math.hypot(singleton.route.pointAt(t).x - start.x, singleton.route.pointAt(t).y - start.y)));
-      expect(maximumDisplacement).toBeGreaterThan(10);
+  it("preserves the crowded (1,4) singleton fixtures", () => {
+    for (const images of [[3, 1, 4, 2, 5], [3, 4, 1, 2, 5], [4, 2, 5, 1, 3], [1, 2, 5, 4, 3]]) {
+      const created = annularPermutationFromImages(1, 4, images);
+      if (!created.ok) throw new Error(created.error.kind);
+      let result = routeAnnularPermutation(created.value, {
+        phaseCandidateCount: 2,
+        sampleCount: 25,
+        maxCandidatesPerEdge: 140,
+        maxSearchNodes: 2_000,
+      });
+      if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
+      expect(result.isRoutable, `${images.join(",")}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
+      if (result.isRoutable) for (const singleton of result.routes.filter((route) => route.edge.role === "singleton")) {
+        expect(Math.abs(singleton.angularBias)).toBeGreaterThanOrEqual(0.08);
+        const start = singleton.route.pointAt(0);
+        const maximumDisplacement = Math.max(...[0.25, 0.5, 0.75].map((t) => Math.hypot(singleton.route.pointAt(t).x - start.x, singleton.route.pointAt(t).y - start.y)));
+        expect(maximumDisplacement).toBeGreaterThan(10);
+      }
     }
   }, 30_000);
 

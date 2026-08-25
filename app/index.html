@@ -28,6 +28,10 @@
           <input id="direction-toggle" type="checkbox" />
           Show direction
         </label>
+        <label class="check-control">
+          <input id="ribbon-fill-toggle" type="checkbox" />
+          Ribbon fill
+        </label>
         <button
           id="export-button"
           class="icon-button"
@@ -55,6 +59,18 @@
           <label><input type="radio" name="display-mode" value="partition" checked /> π</label>
           <label><input type="radio" name="display-mode" value="kreweras" /> Kr(π)</label>
         </fieldset>
+        <div class="thickness-controls" aria-label="Line thickness controls">
+          <label>
+            Cycle edges
+            <input id="cycle-edge-thickness" type="range" min="1" max="8" step="0.2" value="3.4" />
+            <output id="cycle-edge-thickness-output" for="cycle-edge-thickness">3.4</output>
+          </label>
+          <label>
+            Outer boundary
+            <input id="outer-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" />
+            <output id="outer-boundary-thickness-output" for="outer-boundary-thickness">2.5</output>
+          </label>
+        </div>
         <p id="partition-message" class="partition-message" aria-live="polite"></p>
       </section>
 

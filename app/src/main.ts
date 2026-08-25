@@ -17,6 +17,11 @@ type DisplayMode = "partition" | "kreweras";
 const figure = requireElement<HTMLDivElement>("figure");
 const exampleSelect = requireElement<HTMLSelectElement>("example-select");
 const directionToggle = requireElement<HTMLInputElement>("direction-toggle");
+const ribbonFillToggle = requireElement<HTMLInputElement>("ribbon-fill-toggle");
+const cycleEdgeThickness = requireElement<HTMLInputElement>("cycle-edge-thickness");
+const cycleEdgeThicknessOutput = requireElement<HTMLOutputElement>("cycle-edge-thickness-output");
+const outerBoundaryThickness = requireElement<HTMLInputElement>("outer-boundary-thickness");
+const outerBoundaryThicknessOutput = requireElement<HTMLOutputElement>("outer-boundary-thickness-output");
 const exportButton = requireElement<HTMLButtonElement>("export-button");
 const clearButton = requireElement<HTMLButtonElement>("clear-button");
 const selectionOutput = requireElement<HTMLOutputElement>("selection-output");
@@ -66,7 +71,13 @@ function redraw(): void {
   const rendered = renderDiagram(
     figure,
     partitionDiagram(displayedPartition()),
-    { showDirection: directionToggle.checked, selectedEdgeId: selectedEdge?.id ?? null },
+    {
+      showDirection: directionToggle.checked,
+      showRibbonFill: ribbonFillToggle.checked,
+      selectedEdgeId: selectedEdge?.id ?? null,
+      cycleEdgeWidth: Number(cycleEdgeThickness.value),
+      outerBoundaryWidth: Number(outerBoundaryThickness.value),
+    },
     {
       onSelect: (edge) => {
         selectedEdge = edge;
@@ -126,6 +137,16 @@ displayModeControls.forEach((control) => {
 });
 
 directionToggle.addEventListener("change", redraw);
+ribbonFillToggle.addEventListener("change", redraw);
+for (const [control, output] of [
+  [cycleEdgeThickness, cycleEdgeThicknessOutput],
+  [outerBoundaryThickness, outerBoundaryThicknessOutput],
+] as const) {
+  control.addEventListener("input", () => {
+    output.value = control.value;
+    redraw();
+  });
+}
 clearButton.addEventListener("click", () => {
   selectedEdge = null;
   updateSelection(null);

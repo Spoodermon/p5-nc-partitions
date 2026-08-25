@@ -13,7 +13,16 @@ const CYCLE_COLORS = ["#176b75", "#9a4f22", "#5b4b99", "#28784d", "#9a3655"] as 
 
 export interface RenderOptions {
   readonly showDirection: boolean;
+  readonly showRibbonFill: boolean;
   readonly selectedEdgeId: string | null;
+  readonly cycleEdgeWidth: number;
+  readonly outerBoundaryWidth: number;
+}
+
+function closedCyclePath(paths: readonly string[]): string {
+  return `${paths.map((path, index) => index === 0
+    ? path
+    : path.replace(/^M\s+-?[\d.]+\s+-?[\d.]+\s+/, "")).join(" ")} Z`;
 }
 
 export interface RenderCallbacks {
@@ -72,6 +81,7 @@ export function renderDiagram(
 
   const arrowMarker = createArrowMarker(draw);
   const boundaryGroup = draw.group().attr({ "data-layer": "boundary" });
+  const fillGroup = draw.group().attr({ "data-layer": "cycle-fills" });
   const edgeGroup = draw.group().attr({ "data-layer": "edges" });
   const vertexGroup = draw.group().attr({ "data-layer": "vertices" });
 
@@ -79,19 +89,32 @@ export function renderDiagram(
     .circle(DISC_RADIUS * 2)
     .center(DISC_CENTER.x, DISC_CENTER.y)
     .fill("#fffdf9")
-    .stroke({ color: "#a8b2bd", width: 2.5 });
+    .stroke({ color: "#a8b2bd", width: options.outerBoundaryWidth })
+    .attr({ "data-boundary": "outer" });
 
-  layout.edges.forEach((edge) => {
+  const routedEdges = layout.edges.map((edge) => {
     const start = vertexById.get(edge.start);
     const end = vertexById.get(edge.end);
     if (!start || !end) throw new Error(`Missing endpoint for edge ${edge.id}`);
+    return { edge, geometry: makeDiscArc(start, end, edge, example.vertexCount) };
+  });
 
-    const geometry = makeDiscArc(start, end, edge, example.vertexCount);
+  if (options.showRibbonFill) for (let cycleIndex = 0; cycleIndex < example.cycles.length; cycleIndex += 1) {
+    const paths = routedEdges.filter(({ edge }) => edge.cycleIndex === cycleIndex).map(({ geometry }) => geometry.path);
+    if (paths.length === 0) continue;
+    fillGroup.path(closedCyclePath(paths))
+      .fill(CYCLE_COLORS[cycleIndex % CYCLE_COLORS.length] ?? CYCLE_COLORS[0])
+      .opacity(0.14)
+      .stroke("none")
+      .attr({ "data-cycle-fill": String(cycleIndex) });
+  }
+
+  routedEdges.forEach(({ edge, geometry }) => {
     const color = CYCLE_COLORS[edge.cycleIndex % CYCLE_COLORS.length] ?? CYCLE_COLORS[0];
     const path = edgeGroup
       .path(geometry.path)
       .fill("none")
-      .stroke({ color, width: edge.role === "return" ? 4.2 : 3.4, linecap: "round", linejoin: "round" })
+      .stroke({ color, width: edge.role === "return" ? options.cycleEdgeWidth * (4.2 / 3.4) : options.cycleEdgeWidth, linecap: "round", linejoin: "round" })
       .addClass("permutation-edge")
       .attr({ "data-edge-id": edge.id, "data-depth": geometry.depth });
 

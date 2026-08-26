@@ -39,6 +39,7 @@
             <label for="annular-q">q<input id="annular-q" type="text" inputmode="numeric" autocomplete="off" aria-describedby="annular-message" /></label>
             <button type="submit">Render</button>
           </form>
+          <fieldset class="interpretation-toggle"><legend>Interpret input as</legend><label><input type="radio" name="annular-input-interpretation" value="strict-permutation" checked /> Strict permutation</label><label><input type="radio" name="annular-input-interpretation" value="canonical-blocks" /> Canonical block set / auto-orient</label></fieldset>
           <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="annular-display-mode" value="permutation" checked /> τ</label><label><input type="radio" name="annular-display-mode" value="kreweras" /> Kr(τ)</label></fieldset>
           <p id="annular-message" class="input-message" aria-live="polite"></p>
           <div id="routing-progress" class="routing-progress" hidden><progress aria-label="Annular routing progress"></progress><span id="routing-progress-label">Preparing routing search…</span></div>

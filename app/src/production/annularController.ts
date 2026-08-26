@@ -10,6 +10,7 @@ import {
 } from "../math";
 
 export type AnnularInputErrorKind = "syntax-domain" | "mathematically-crossing" | "router-failure";
+export type AnnularInputInterpretation = "strict-permutation" | "canonical-blocks";
 
 export interface AnnularInputError {
   readonly kind: AnnularInputErrorKind;
@@ -20,6 +21,11 @@ export interface AcceptedAnnularInput {
   readonly ok: true;
   readonly permutation: AnnularPermutation;
   readonly routed: Extract<RoutedAnnularDiagram, { readonly isRoutable: true }>;
+  readonly interpretation: AnnularInputInterpretation;
+  readonly sourceNotation: string;
+  readonly resolvedNotation: string;
+  readonly wasAutoOriented: boolean;
+  /** @deprecated Use resolvedNotation. Retained for stored production state compatibility. */
   readonly canonicalNotation: string;
 }
 
@@ -30,6 +36,13 @@ export interface RejectedAnnularInput {
 
 export type AnnularInputResult = AcceptedAnnularInput | RejectedAnnularInput;
 export type AnnularRouter = (value: AnnularPermutation) => RoutedAnnularDiagram;
+
+export function annularResolutionMessage(value: AcceptedAnnularInput, prefix = "τ"): string {
+  if (value.interpretation !== "canonical-blocks") return `${prefix} = ${value.resolvedNotation}`;
+  return value.wasAutoOriented
+    ? `Auto-oriented block supports to ${prefix} = ${value.resolvedNotation}`
+    : `Block supports resolved to ${prefix} = ${value.resolvedNotation}`;
+}
 
 const MAX_CANONICAL_ORIENTATIONS = 50_000;
 
@@ -118,6 +131,7 @@ export function processAnnularInput(
   qText: string,
   notation: string,
   router: AnnularRouter = routeAnnularPermutation,
+  interpretation: AnnularInputInterpretation = "strict-permutation",
 ): AnnularInputResult {
   const p = boundaryValue(pText, "p");
   if (typeof p !== "number") return { ok: false, error: p };
@@ -129,20 +143,23 @@ export function processAnnularInput(
     return { ok: false, error: { kind: "syntax-domain", message: annularParseErrorMessage(parsed.error, p, q) } };
   }
 
-  const canonical = canonicalizeAnnularBlocks(parsed.value);
-  if (!canonical) {
+  const sourceNotation = annularPermutationToString(parsed.value);
+  const resolved = interpretation === "canonical-blocks" ? canonicalizeAnnularBlocks(parsed.value) : parsed.value;
+  if (!resolved || !analyzeAnnularNoncrossing(resolved).isNoncrossing) {
     return {
       ok: false,
       error: {
         kind: "mathematically-crossing",
-        message: `Permutation is not annular-noncrossing for (p,q)=(${p},${q}).`,
+        message: interpretation === "canonical-blocks"
+          ? `Block supports cannot be auto-oriented as an annular-noncrossing permutation for (p,q)=(${p},${q}).`
+          : `Permutation is not annular-noncrossing for (p,q)=(${p},${q}).`,
       },
     };
   }
 
   let routed: RoutedAnnularDiagram;
   try {
-    routed = router(canonical);
+    routed = router(resolved);
   } catch {
     return {
       ok: false,
@@ -166,8 +183,12 @@ export function processAnnularInput(
 
   return {
     ok: true,
-    permutation: canonical,
+    permutation: resolved,
     routed,
-    canonicalNotation: annularPermutationToString(canonical),
+    interpretation,
+    sourceNotation,
+    resolvedNotation: annularPermutationToString(resolved),
+    wasAutoOriented: sourceNotation !== annularPermutationToString(resolved),
+    canonicalNotation: annularPermutationToString(resolved),
   };
 }

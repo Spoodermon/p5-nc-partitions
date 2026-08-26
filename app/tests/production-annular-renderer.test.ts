@@ -5,6 +5,7 @@ import { parseAnnularPermutation } from "../src/math";
 import { annularDiagram } from "../src/renderer/annularModel";
 import { renderAnnularDiagram } from "../src/renderer/annularSvgRenderer";
 import { assertExportIsVector, serializeFigure } from "../src/renderer/export";
+import { processAnnularInput } from "../src/production/annularController";
 
 function model(text: string, p: number, q: number) {
   const parsed = parseAnnularPermutation(text, p, q);
@@ -69,4 +70,19 @@ describe("production annular SVG renderer", () => {
       if (fill) expect(serialized).toContain("data-cycle-fill");
     }
   }, 30_000);
+
+  it("exports the resolved permutation produced by canonical block interpretation", () => {
+    const accepted = processAnnularInput("4", "2", "(1 4 3)(2)(5)(6)", routeAnnularPermutation, "canonical-blocks");
+    if (!accepted.ok) throw new Error(accepted.error.message);
+    expect(accepted.wasAutoOriented).toBe(true);
+
+    const container = document.createElement("div");
+    const rendered = renderAnnularDiagram(container, annularDiagram(accepted.permutation, accepted.routed), {
+      showDirection: false, showRibbonFill: false, selectedEdgeId: null,
+      cycleEdgeWidth: 3.4, outerBoundaryWidth: 2.5, innerBoundaryWidth: 2.5,
+    }, { onSelect: () => undefined });
+    const exported = serializeFigure(rendered.svg);
+    expect(exported).toContain(accepted.resolvedNotation);
+    expect(exported).not.toContain(accepted.sourceNotation);
+  });
 });

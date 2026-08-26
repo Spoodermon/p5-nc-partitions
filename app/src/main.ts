@@ -2,7 +2,7 @@ import "./style.css";
 import type { DirectedEdge } from "./geometry/disc";
 import { routeAnnularPermutation, type AnnularDirectedEdge } from "./geometry/annular-routing";
 import { annularKrewerasComplement, annularPermutationToString, classifiedAnnularCycles, krewerasComplement, mathErrorMessage, parseNoncrossingPartition, partitionToString, randomAnnularBlockNotation, randomNoncrossingPartition, type DiscPartition } from "./math";
-import { processAnnularInput, type AcceptedAnnularInput } from "./production/annularController";
+import { annularResolutionMessage, processAnnularInput, type AcceptedAnnularInput, type AnnularInputInterpretation } from "./production/annularController";
 import { ProductionSurfaceState, type SurfaceMode } from "./production/surfaceState";
 import { annularDiagram } from "./renderer/annularModel";
 import { renderAnnularDiagram } from "./renderer/annularSvgRenderer";
@@ -60,9 +60,11 @@ const numberFontControl = requireElement<HTMLSelectElement>("number-font");
 const surfaceControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="surface-mode"]'));
 const discDisplayControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="disc-display-mode"]'));
 const annularDisplayControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="annular-display-mode"]'));
+const annularInterpretationControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="annular-input-interpretation"]'));
 
 let discDisplayMode: DiscDisplayMode = "partition";
 let annularDisplayMode: AnnularDisplayMode = "permutation";
+let annularInputInterpretation: AnnularInputInterpretation = "strict-permutation";
 let annularComplementState: AcceptedAnnularInput | null = null;
 let selectedPalette = "tidepool";
 const customColors = new Map<string, string>();
@@ -189,7 +191,7 @@ function redraw(): void {
     currentSvg = rendered.svg;
     annularMessage.dataset.state = "valid";
     const prefix = annularDisplayMode === "kreweras" ? "Kr(τ)" : "τ";
-    annularMessage.textContent = `${prefix} = ${annularState.canonicalNotation} · (p,q)=(${annularState.permutation.p},${annularState.permutation.q})`;
+    annularMessage.textContent = `${annularResolutionMessage(annularState, prefix)} · (p,q)=(${annularState.permutation.p},${annularState.permutation.q})`;
   }
 }
 
@@ -202,30 +204,33 @@ function acceptDiscInput(input: string): boolean {
   selectedEdge = null; updateSelection(null); redraw(); return true;
 }
 
-function acceptAnnularInput(p: string, q: string, input: string): boolean {
-  const result = processAnnularInput(p, q, input);
+function acceptAnnularInput(p: string, q: string, input: string, interpretation: AnnularInputInterpretation = annularInputInterpretation): boolean {
+  const result = processAnnularInput(p, q, input, routeAnnularPermutation, interpretation);
   if (!result.ok) { annularMessage.dataset.state = "error"; annularMessage.textContent = result.error.message; return false; }
   state.annular = result;
   annularComplementState = annularComplementCache.get(annularCacheKey(result)) ?? null;
   annularDisplayMode = "permutation";
   annularDisplayControls.forEach((control) => { control.checked = control.value === "permutation"; });
-  annularP.value = String(result.permutation.p); annularQ.value = String(result.permutation.q); annularInput.value = result.canonicalNotation;
+  annularP.value = String(result.permutation.p); annularQ.value = String(result.permutation.q);
   selectedEdge = null; updateSelection(null); redraw(); return true;
 }
 
 function queueAnnularInput(p: string, q: string, input: string, fallbackInput?: string): void {
+  const interpretation = annularInputInterpretation;
   annularMessage.dataset.state = "pending";
   annularMessage.textContent = "Preparing annular diagram…";
   routingProgress.hidden = false;
-  routingProgressLabel.textContent = "Validating boundary sizes and cycle blocks…";
+  routingProgressLabel.textContent = "Validating boundary sizes and permutation notation…";
   window.setTimeout(() => {
-    routingProgressLabel.textContent = "Canonicalizing cycle order and searching phases, seams, and collision-free routes…";
+    routingProgressLabel.textContent = interpretation === "canonical-blocks"
+      ? "Auto-orienting block supports and searching phases, seams, and collision-free routes…"
+      : "Preserving cycle orientation and searching phases, seams, and collision-free routes…";
     window.setTimeout(() => {
-      const accepted = acceptAnnularInput(p, q, input);
+      const accepted = acceptAnnularInput(p, q, input, interpretation);
       if (!accepted && fallbackInput) {
         routingProgressLabel.textContent = "The connected draw was too crowded; routing a fresh disconnected annular sample…";
         annularInput.value = fallbackInput;
-        window.setTimeout(() => { acceptAnnularInput(p, q, fallbackInput); routingProgress.hidden = true; }, 20);
+        window.setTimeout(() => { acceptAnnularInput(p, q, fallbackInput, interpretation); routingProgress.hidden = true; }, 20);
       } else routingProgress.hidden = true;
     }, 20);
   }, 20);
@@ -261,7 +266,8 @@ function showAnnularComplement(): void {
       annularMessage.textContent = "Kr(τ) is defined, but the bounded production router could not place it without a collision.";
       return;
     }
-    annularComplementState = { ok: true, permutation, routed, canonicalNotation: annularPermutationToString(permutation) };
+    const resolvedNotation = annularPermutationToString(permutation);
+    annularComplementState = { ok: true, permutation, routed, interpretation: "strict-permutation", sourceNotation: resolvedNotation, resolvedNotation, wasAutoOriented: false, canonicalNotation: resolvedNotation };
     annularComplementCache.set(annularCacheKey(state.annular), annularComplementState);
     selectedEdge = null; updateSelection(null); redraw();
   }, 20);
@@ -286,6 +292,9 @@ exampleSelect.addEventListener("change", () => {
 });
 discForm.addEventListener("submit", (event) => { event.preventDefault(); acceptDiscInput(discInput.value); });
 annularForm.addEventListener("submit", (event) => { event.preventDefault(); queueAnnularInput(annularP.value, annularQ.value, annularInput.value); });
+annularInterpretationControls.forEach((control) => control.addEventListener("change", () => {
+  if (control.checked) annularInputInterpretation = control.value as AnnularInputInterpretation;
+}));
 discRandomButton.addEventListener("click", () => {
   const n = Number(discN.value.trim());
   if (!Number.isInteger(n) || n < 1) { discMessage.dataset.state = "error"; discMessage.textContent = "n must be a positive integer."; return; }
@@ -297,6 +306,8 @@ annularRandomButton.addEventListener("click", () => {
   if (!Number.isInteger(p) || p < 1 || !Number.isInteger(q) || q < 1) { annularMessage.dataset.state = "error"; annularMessage.textContent = "p and q must be positive integers."; return; }
   const notation = randomAnnularBlockNotation(p, q, Math.random, 0.45);
   const fallback = randomAnnularBlockNotation(p, q, Math.random, 0);
+  annularInputInterpretation = "canonical-blocks";
+  annularInterpretationControls.forEach((control) => { control.checked = control.value === annularInputInterpretation; });
   annularInput.value = notation; queueAnnularInput(String(p), String(q), notation, fallback);
 });
 surfaceControls.forEach((control) => control.addEventListener("change", () => { if (control.checked) showSurface(control.value as SurfaceMode); }));

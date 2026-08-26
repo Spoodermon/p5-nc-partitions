@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { routeAnnularPermutation, serializeRoutedAnnularDiagram, type RoutedAnnularDiagram } from "../src/geometry/annular-routing";
 import { annularPermutationToString, parseAnnularPermutation, parseNoncrossingPartition, partitionToString } from "../src/math";
-import { processAnnularInput } from "../src/production/annularController";
+import { annularResolutionMessage, processAnnularInput } from "../src/production/annularController";
 import { canonicalizeAnnularBlocks } from "../src/production/annularController";
 import { ProductionSurfaceState } from "../src/production/surfaceState";
 
 describe("production mathematical mode controller", () => {
-  it("keeps disc block orientation canonical but annular permutation orientation distinct", () => {
+  it("keeps disc block orientation canonical but strict annular permutation orientation distinct", () => {
     const discA = parseNoncrossingPartition("(1 2 3)");
     const discB = parseNoncrossingPartition("(1 3 2)");
     expect(discA.ok && discB.ok && partitionToString(discA.value)).toBe(discB.ok ? partitionToString(discB.value) : "");
@@ -15,6 +15,17 @@ describe("production mathematical mode controller", () => {
     const annularB = parseAnnularPermutation("(1 3 2)(4)", 3, 1);
     expect(annularA.ok && annularB.ok).toBe(true);
     if (annularA.ok && annularB.ok) expect(annularPermutationToString(annularA.value)).not.toBe(annularPermutationToString(annularB.value));
+
+    const strictA = processAnnularInput("3", "1", "(1 2 3)(4)");
+    const strictB = processAnnularInput("3", "1", "(1 3 2)(4)");
+    expect(strictA.ok).toBe(true);
+    expect(strictB.ok).toBe(false);
+    if (strictA.ok) {
+      expect(strictA.interpretation).toBe("strict-permutation");
+      expect(strictA.sourceNotation).toBe("(1 2 3)(4)");
+      expect(strictA.resolvedNotation).toBe("(1 2 3)(4)");
+      expect(strictA.wasAutoOriented).toBe(false);
+    }
   });
 
   it("classifies boundary, syntax, domain, crossing, and router failures separately", () => {
@@ -66,12 +77,18 @@ describe("production mathematical mode controller", () => {
     expect(router).toHaveBeenCalledOnce();
   });
 
-  it("accepts either cyclic spelling of an annular block and emits one canonical order", () => {
-    const a = processAnnularInput("10", "7", "(1 11 10)(2 17)(3)(4)(5)(6)(7)(8)(9)(12)(13)(14)(15)(16)");
-    const b = processAnnularInput("10", "7", "(1 10 11)(2 17)(3)(4)(5)(6)(7)(8)(9)(12)(13)(14)(15)(16)");
+  it("resolves equal block supports to one explicit canonical orientation", () => {
+    const a = processAnnularInput("4", "2", "(1 3 4)(2)(5)(6)", routeAnnularPermutation, "canonical-blocks");
+    const b = processAnnularInput("4", "2", "(1 4 3)(2)(5)(6)", routeAnnularPermutation, "canonical-blocks");
     expect(a.ok).toBe(true);
     expect(b.ok).toBe(true);
-    if (a.ok && b.ok) expect(a.canonicalNotation).toBe(b.canonicalNotation);
+    if (a.ok && b.ok) {
+      expect(a.resolvedNotation).toBe(b.resolvedNotation);
+      expect(b.sourceNotation).toBe("(1 4 3)(2)(5)(6)");
+      expect(b.wasAutoOriented).toBe(true);
+      expect(b.interpretation).toBe("canonical-blocks");
+      expect(annularResolutionMessage(b)).toBe(`Auto-oriented block supports to τ = ${b.resolvedNotation}`);
+    }
   });
 
   it("canonicalizes the reported (8,5) block set", () => {

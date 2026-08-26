@@ -374,7 +374,6 @@ function pureBundles(
   const lifts = liftRecord(layout, seam, corridor);
   if (edges.length === 1 && edges[0]?.role === "singleton") {
     const edge = edges[0];
-    const variants: CycleRouteBundle[] = [];
     const boundarySize = edge.startBoundary === "outer" ? layout.p : layout.q;
     const availableAngularSpace = TWO_PI / boundarySize;
     const preferredBias = Math.min(0.24, Math.max(0.13, availableAngularSpace * 0.34));
@@ -388,22 +387,22 @@ function pureBundles(
       preferredExcursion * 0.66,
       midpointExcursion, 0.14, 0.19, 0.25, 0.1, 0.08, 0.05, 0.03,
     ].map((value) => Number(value.toFixed(4))))];
-    for (const excursion of excursions) for (const angularBias of [0.06, -0.06, 0.1, -0.1, 0.14, -0.14, 0.19, -0.19, 0.24, -0.24]) {
+    const specs = excursions.flatMap((excursion) => [0.06, -0.06, 0.1, -0.1, 0.14, -0.14, 0.19, -0.19, 0.24, -0.24].map((angularBias) => {
+      const localScore = Math.abs(excursion - preferredExcursion) + Math.abs(Math.abs(angularBias) - preferredBias) * 0.2;
+      return { excursion, angularBias, localScore, key: `singleton:${excursion}:${angularBias}` };
+    }));
+    const selected = boundedCandidates(specs.sort((a, b) => a.localScore - b.localScore || a.key.localeCompare(b.key)), maxBundles);
+    return Object.freeze(selected.map(({ excursion, angularBias, localScore, key }) => {
       const route = createAnnularRoute(layout, {
         startLabel: edge.startLabel,
         endLabel: edge.endLabel,
         excursion,
         angularBias,
       });
-      // Scale loop breadth to the boundary spacing. Dense boundaries retain a
-      // compact loop, while sparse sectors use their available angular room.
-      const localScore = Math.abs(excursion - preferredExcursion) + Math.abs(Math.abs(angularBias) - preferredBias) * 0.2;
-      const routed = candidate(layout, edge, route, 0, localScore, `singleton:${excursion}:${angularBias}`, sampleCount, "analytical-bump");
-      variants.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze([routed]), score: routed.localScore, key: routed.key }));
-    }
-    return Object.freeze(boundedCandidates(variants.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)), maxBundles));
+      const routed = candidate(layout, edge, route, 0, localScore, key, sampleCount, "analytical-bump");
+      return Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze([routed]), score: routed.localScore, key: routed.key });
+    }));
   }
-  const bundles: CycleRouteBundle[] = [];
   const isTwoCycle = edges.length === 2 && edges.every((edge) => edge.cycleLength === 2);
   const patterns: number[][] = isTwoCycle ? [[0, 0], [-1, -1], [1, 1]] : [Array(edges.length).fill(0)];
   if (!isTwoCycle) {
@@ -416,9 +415,19 @@ function pureBundles(
       }
     }
   }
-  for (const edgeDeckOffsets of patterns) {
-   for (const laneVariant of isTwoCycle ? [0, 1, 2, 3] : [0, 1, 2]) {
-    for (const edgeSpacing of isTwoCycle ? [0, 0.28, -0.28, 0.75, -0.75] : [0, 0.16, 0.28]) {
+  const preservesChainRibbon = followsContiguousBoundaryChain(layout, corridor);
+  const specs = patterns.flatMap((edgeDeckOffsets) => (isTwoCycle ? [0, 1, 2, 3] : [0, 1, 2]).flatMap((laneVariant) =>
+    (isTwoCycle ? [0, 0.28, -0.28, 0.75, -0.75] : [0, 0.16, 0.28]).map((edgeSpacing) => {
+      const score = edges.reduce((sum, edge) => {
+        const pairedBias = edge.cycleLength === 2 ? edgeSpacing : (edge.edgeIndex - (edge.cycleLength - 1) / 2) * edgeSpacing;
+        const preservesRibbon = edge.cycleLength === 2 || preservesChainRibbon || (corridor.kind === "inner-collar" && edge.role === "return");
+        const homotopyPenalty = preservesRibbon ? Math.abs(edgeDeckOffsets[edge.edgeIndex] ?? 0) * 2 : 0;
+        return sum + laneVariant + Math.abs(pairedBias) + homotopyPenalty;
+      }, 0);
+      return { edgeDeckOffsets, laneVariant, edgeSpacing, score, key: `pure:${edgeDeckOffsets.join(",")}:${laneVariant}:${edgeSpacing}` };
+    })));
+  const selected = boundedCandidates(specs.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)), maxBundles);
+  return Object.freeze(selected.map(({ edgeDeckOffsets, laneVariant, edgeSpacing, key }) => {
       const routes = edges.map((edge) => {
         const pairedBias = edge.cycleLength === 2 ? edgeSpacing : (edge.edgeIndex - (edge.cycleLength - 1) / 2) * edgeSpacing;
         const route = pureRoute(layout, edge, lifts, corridor, laneVariant, pairedBias, edgeDeckOffsets[edge.edgeIndex] ?? 0);
@@ -428,12 +437,8 @@ function pureBundles(
         const homotopyPenalty = preservesChainRibbon ? Math.abs(edgeDeckOffsets[edge.edgeIndex] ?? 0) * 2 : 0;
         return candidate(layout, edge, route, laneVariant + (edge.role === "return" ? 1 : 0), laneVariant + Math.abs(pairedBias) + homotopyPenalty, `pure:${laneVariant}:${pairedBias}`, sampleCount, "cover-cubic");
       });
-      const key = `pure:${edgeDeckOffsets.join(",")}:${laneVariant}:${edgeSpacing}`;
-      bundles.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze(routes), score: routes.reduce((sum, route) => sum + route.localScore, 0), key }));
-    }
-   }
-  }
-  return Object.freeze(boundedCandidates(bundles.sort((a, b) => a.score - b.score || a.key.localeCompare(b.key)), maxBundles));
+      return Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze(routes), score: routes.reduce((sum, route) => sum + route.localScore, 0), key });
+  }));
 }
 
 function throughBundles(
@@ -550,6 +555,8 @@ export function generateCycleBundles(
   hardClearance: number = ROUTING_POLICY.hardClearance,
   endpointRadius: number = ROUTING_POLICY.commonEndpointRadius,
 ): readonly CycleRouteBundle[] {
+  if (!Number.isInteger(sampleCount) || sampleCount < 2 || sampleCount > ROUTING_POLICY.maximumRenderSampleCount) throw new RangeError(`sample count must be an integer in [2,${ROUTING_POLICY.maximumRenderSampleCount}]`);
+  if (!Number.isInteger(maxCandidatesPerEdge) || maxCandidatesPerEdge < 1 || maxCandidatesPerEdge > 10_000) throw new RangeError("maximum candidates per edge must be an integer in [1,10000]");
   const maxBundles = Math.max(1, Math.floor(maxCandidatesPerEdge)) * Math.max(1, edges.length);
   return corridor.kind === "through"
     ? throughBundles(layout, seam, corridor, edges, sampleCount, throughHomotopyPolicy, maxBundles, hardClearance, endpointRadius)

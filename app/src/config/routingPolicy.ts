@@ -4,6 +4,7 @@ export const ROUTING_POLICY = Object.freeze({
   maxSearchNodes: 5_000,
   renderSampleCount: 65,
   maximumRenderSampleCount: 257,
+  maximumStandaloneSampleCount: 10_001,
   maximumDistanceOption: 1_000,
   maximumCommonEndpointRadius: 100,
   routeStrokeWidth: 4,

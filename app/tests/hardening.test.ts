@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { INPUT_LIMITS } from "../src/config/limits";
 import { ROUTING_POLICY } from "../src/config/routingPolicy";
-import { adaptiveRouteSamples, analyzeRouteClearance, routeAnnularPermutation, type RoutedAnnularSuccess } from "../src/geometry/annular-routing";
+import { adaptiveRouteSamples, analyzeRouteClearance, analyzeRoutePair, annularSeamStates, createCycleCorridors, extractAnnularEdges, generateCycleBundles, generateRouteCandidates, routeAnnularPermutation, type AnnularRouteCandidate, type RoutedAnnularSuccess } from "../src/geometry/annular-routing";
 import { createAnnularLayout, createAnnularRoute, sampleAnnularRoute, type AnnularRoute } from "../src/geometry/annular";
 import { parseAnnularPermutation, parseDiscPartition, partitionToString } from "../src/math";
 import { processAnnularInput, resolveCanonicalAnnularBlocks } from "../src/production/annularController";
+
+declare const process: { memoryUsage(): { readonly rss: number } };
 
 function annular(text: string, p: number, q: number) {
   const result = parseAnnularPermutation(text, p, q);
@@ -156,6 +158,49 @@ describe("truthful routing contracts", () => {
     expect(routed.diagnostics.searchNodes).toBe(0);
     expect(routed.diagnostics.searchedCandidateCount).toBe(0);
     expect(routed.diagnostics.searchedPhaseCount).toBe(0);
+  });
+
+  it("materializes only bounded candidates for a positive one-node budget", () => {
+    const before = process.memoryUsage().rss;
+    const routed = routeAnnularPermutation(
+      annular("(1 2 3 4 5 6 7 8 9 10)(11)", 10, 1),
+      { maxSearchNodes: 1, maxCandidatesPerEdge: 1, sampleCount: ROUTING_POLICY.maximumRenderSampleCount },
+    );
+    const rssGrowth = process.memoryUsage().rss - before;
+    expect(routed.isRoutable).toBe(false);
+    if (!routed.isRoutable) expect(routed.reason).toBe("search-limit-exceeded");
+    expect(routed.diagnostics.searchedCandidateCount).toBeLessThanOrEqual(11);
+    expect(rssGrowth).toBeLessThan(32 * 1024 * 1024);
+  });
+
+  it("bounds every exported sampling and candidate helper", () => {
+    const value = annular("(1 2)(3)(4)", 2, 2);
+    const layout = createAnnularLayout(2, 2);
+    const edges = extractAnnularEdges(value);
+    const edge = edges[0]!;
+    const seam = [...annularSeamStates(layout)][0]!;
+    const corridor = createCycleCorridors(value, seam)[0]!;
+    const corridorEdges = edges.filter((candidate) => candidate.cycleIndex === corridor.cycleIndex);
+    const route = createAnnularRoute(layout, { startLabel: edge.startLabel, endLabel: edge.endLabel });
+    expect(() => sampleAnnularRoute(route, ROUTING_POLICY.maximumStandaloneSampleCount + 1)).toThrow(RangeError);
+    expect(() => generateRouteCandidates(layout, edge, ROUTING_POLICY.maximumRenderSampleCount + 1, 1)).toThrow(RangeError);
+    expect(() => generateCycleBundles(layout, seam, corridor, corridorEdges, ROUTING_POLICY.maximumRenderSampleCount + 1, "all", 1)).toThrow(RangeError);
+  });
+
+  it("contracts endpoint exemptions by approximation tolerance", () => {
+    const layout = createAnnularLayout(2, 1);
+    const firstEdge = extractAnnularEdges(annular("(1 2)(3)", 2, 1))[0]!;
+    const secondEdge = extractAnnularEdges(annular("(1 3)(2)", 2, 1))[0]!;
+    const route = createAnnularRoute(layout, { startLabel: 1, endLabel: 2 });
+    const make = (edge: typeof firstEdge, y: number): AnnularRouteCandidate => ({
+      edge, winding: 0, lane: 0, excursion: route.excursion, angularBias: 0, route,
+      samples: Object.freeze([{ x: 0, y: 0 }, { x: 7.9, y }]), localScore: 0, key: edge.id,
+    });
+    const first = make(firstEdge, 0);
+    const second = make(secondEdge, 0.1);
+    expect(analyzeRoutePair(first, second, 8).clearance).toBe(Number.POSITIVE_INFINITY);
+    expect(analyzeRoutePair(first, second, 8, ROUTING_POLICY.verificationTolerance).clearance).toBeLessThanOrEqual(0.1 + 1e-9);
+    expect(analyzeRoutePair(first, second, 24, ROUTING_POLICY.verificationTolerance).intersects).toBe(true);
   });
 
   it("treats maxSearchNodes as one call-wide cap", () => {

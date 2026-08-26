@@ -80,7 +80,7 @@ export function verifyRouteSet(routes: readonly AnnularRouteCandidate[], layout:
     verified.push(Object.freeze({ ...candidate, samples: sampled.samples }));
   }
   const margin = verificationClearanceMargin();
-  const rawAnalysis = analyzeRouteClearance(verified, layout, hardClearance + margin, commonEndpointRadius);
+  const rawAnalysis = analyzeRouteClearance(verified, layout, hardClearance + margin, commonEndpointRadius, ROUTING_POLICY.verificationTolerance);
   const analysis = conservativeClearance(rawAnalysis, margin);
   if (rawAnalysis.hardCollisionCount !== 0 || analysis.minimumClearance < hardClearance) return Object.freeze({ ok: false, reason: "geometry-verification-failed" as const, analysis, routes: Object.freeze(verified) });
   return Object.freeze({ ok: true, analysis, routes: Object.freeze(verified) });

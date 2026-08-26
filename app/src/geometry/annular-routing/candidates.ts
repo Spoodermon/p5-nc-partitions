@@ -1,3 +1,4 @@
+import { ROUTING_POLICY } from "../../config/routingPolicy";
 import { createAnnularRoute, sampleAnnularRoute, type AnnularLayout } from "../annular";
 import type { AnnularDirectedEdge, AnnularRouteCandidate } from "./types";
 
@@ -42,6 +43,8 @@ export function generateRouteCandidates(
   sampleCount = 97,
   maximum = 36,
 ): readonly AnnularRouteCandidate[] {
+  if (!Number.isInteger(sampleCount) || sampleCount < 2 || sampleCount > ROUTING_POLICY.maximumRenderSampleCount) throw new RangeError(`sample count must be an integer in [2,${ROUTING_POLICY.maximumRenderSampleCount}]`);
+  if (!Number.isInteger(maximum) || maximum < 1 || maximum > 10_000) throw new RangeError("maximum candidates must be an integer in [1,10000]");
   const specs: Array<{ winding: number; lane: number; excursion: number; angularBias: number }> = [];
   if (edge.role === "singleton") {
     SINGLETON_EXCURSIONS.forEach((excursion, lane) => singletonBiases(edge).forEach((angularBias) => {
@@ -57,7 +60,14 @@ export function generateRouteCandidates(
     }));
   }
 
-  return Object.freeze(specs.map((spec) => {
+  const selected = specs.map((spec) => {
+    const startAngle = layout.vertices[edge.startLabel - 1]?.angle;
+    const endAngle = layout.vertices[edge.endLabel - 1]?.angle;
+    if (startAngle === undefined || endAngle === undefined) throw new Error("route candidate vertex invariant failed");
+    const displacement = edge.role === "singleton" ? 0 : endAngle + spec.winding * 2 * Math.PI - startAngle;
+    return { ...spec, localScore: score(edge, spec.winding, spec.lane, spec.angularBias, displacement), key: candidateKey(spec.winding, spec.lane, spec.excursion, spec.angularBias) };
+  }).sort((a, b) => a.localScore - b.localScore || a.key.localeCompare(b.key)).slice(0, maximum);
+  return Object.freeze(selected.map((spec) => {
     const route = createAnnularRoute(layout, {
       startLabel: edge.startLabel,
       endLabel: edge.endLabel,
@@ -70,8 +80,8 @@ export function generateRouteCandidates(
       ...spec,
       route,
       samples: sampleAnnularRoute(route, sampleCount),
-      localScore: score(edge, spec.winding, spec.lane, spec.angularBias, route.angularDisplacement),
-      key: candidateKey(spec.winding, spec.lane, spec.excursion, spec.angularBias),
+      localScore: spec.localScore,
+      key: spec.key,
     });
-  }).sort((a, b) => a.localScore - b.localScore || a.key.localeCompare(b.key)).slice(0, maximum));
+  }));
 }

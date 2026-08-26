@@ -18,12 +18,13 @@ export function analyzeRouteClearance(
   layout: AnnularLayout,
   hardClearance: number,
   commonEndpointRadius: number,
+  approximationTolerance = 0,
 ): ClearanceAnalysis {
   let hardCollisionCount = 0;
   let worstPair: RoutePairDiagnostic | null = null;
   for (let i = 0; i < routes.length; i += 1) {
     for (let j = i + 1; j < routes.length; j += 1) {
-      const pair = analyzeRoutePair(routes[i] as AnnularRouteCandidate, routes[j] as AnnularRouteCandidate, commonEndpointRadius);
+      const pair = analyzeRoutePair(routes[i] as AnnularRouteCandidate, routes[j] as AnnularRouteCandidate, commonEndpointRadius, approximationTolerance);
       if (pair.intersects || pair.coincident || pair.clearance < hardClearance) hardCollisionCount += 1;
       if (worstPair === null || pair.clearance < worstPair.clearance) worstPair = pair;
     }
@@ -45,4 +46,3 @@ export function analyzeRouteClearance(
     labelWarnings: Object.freeze(labelWarnings),
   });
 }
-

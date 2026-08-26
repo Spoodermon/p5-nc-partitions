@@ -125,7 +125,9 @@ export function analyzeRoutePair(
   first: AnnularRouteCandidate,
   second: AnnularRouteCandidate,
   commonEndpointRadius = 18,
+  approximationTolerance = 0,
 ): RoutePairDiagnostic {
+  if (!Number.isFinite(commonEndpointRadius) || commonEndpointRadius < 0 || !Number.isFinite(approximationTolerance) || approximationTolerance < 0) throw new RangeError("endpoint radius and approximation tolerance must be finite and nonnegative");
   const labels = sharedLabels(first, second);
   const sharedPoints = labels.map((label) => {
     if (label === first.edge.startLabel) return first.samples[0] as Point;
@@ -135,14 +137,17 @@ export function analyzeRoutePair(
   let intersects = false;
   let coincidentSegments = 0;
 
-  const firstSegments = clippedRouteSegments(first.samples, sharedPoints, commonEndpointRadius);
-  const secondSegments = clippedRouteSegments(second.samples, sharedPoints, commonEndpointRadius);
+  const contractedEndpointRadius = Math.max(0, commonEndpointRadius - approximationTolerance);
+  const firstSegments = clippedRouteSegments(first.samples, sharedPoints, contractedEndpointRadius);
+  const secondSegments = clippedRouteSegments(second.samples, sharedPoints, contractedEndpointRadius);
   if (labels.length > 0 && commonEndpointRadius > 8) {
-    const tightFirst = clippedRouteSegments(first.samples, sharedPoints, 8);
-    const tightSecond = clippedRouteSegments(second.samples, sharedPoints, 8);
+    const tightRadius = Math.max(0, 8 - approximationTolerance);
+    const tightFirst = clippedRouteSegments(first.samples, sharedPoints, tightRadius);
+    const tightSecond = clippedRouteSegments(second.samples, sharedPoints, tightRadius);
     for (const [firstStart, firstEnd] of tightFirst) for (const [secondStart, secondEnd] of tightSecond) {
-      if (boxesFar(firstStart, firstEnd, secondStart, secondEnd, 0)) continue;
-      if (properIntersection(firstStart, firstEnd, secondStart, secondEnd)) intersects = true;
+      if (boxesFar(firstStart, firstEnd, secondStart, secondEnd, 2 * approximationTolerance)) continue;
+      if (properIntersection(firstStart, firstEnd, secondStart, secondEnd)
+        || (approximationTolerance > 0 && segmentDistance(firstStart, firstEnd, secondStart, secondEnd) <= 2 * approximationTolerance)) intersects = true;
     }
   }
   for (const [firstStart, firstEnd] of firstSegments) {

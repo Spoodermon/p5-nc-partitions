@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ROUTING_POLICY } from "../src/config/routingPolicy";
 import {
   annularVertex,
   createAnnularLayout,
@@ -118,5 +119,6 @@ describe("annular route primitives", () => {
     expectPointClose(first[0] as Point, routes.through.pointAt(0));
     expectPointClose(first.at(-1) as Point, routes.through.pointAt(1));
     expect(() => sampleAnnularRoute(routes.through, 1)).toThrow(RangeError);
+    expect(() => sampleAnnularRoute(routes.through, ROUTING_POLICY.maximumStandaloneSampleCount + 1)).toThrow(RangeError);
   });
 });

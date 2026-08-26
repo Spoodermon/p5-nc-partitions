@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "../../config/limits";
 import { createPermutation } from "../permutation";
 import { createAnnularPermutation, validAnnularBoundarySizes } from "./domain";
 import { annularFailure, type AnnularPermutation, type AnnularResult } from "./types";
@@ -13,8 +14,12 @@ function isDigit(character: string | undefined): boolean {
 // Parses actual permutation cycles. Cycle orientation is preserved; omitted labels are fixed points.
 export function parseAnnularPermutation(input: string, p: number, q: number): AnnularResult<AnnularPermutation> {
   if (!validAnnularBoundarySizes(p, q)) {
+    if (Number.isSafeInteger(p) && p >= 1 && Number.isSafeInteger(q) && q >= 1) {
+      return annularFailure({ kind: "boundary-size-too-large", p, q, maximumP: INPUT_LIMITS.annularP, maximumQ: INPUT_LIMITS.annularQ, maximumTotal: INPUT_LIMITS.annularTotalSupport });
+    }
     return annularFailure({ kind: "invalid-boundary-size", p, q });
   }
+  if (input.length > INPUT_LIMITS.inputCharacters) return annularFailure({ kind: "input-too-long", maximum: INPUT_LIMITS.inputCharacters });
 
   const n = p + q;
   const cycles: number[][] = [];
@@ -62,7 +67,14 @@ export function parseAnnularPermutation(input: string, p: number, q: number): An
 
       while (isDigit(input[position])) position += 1;
       const digitsStart = input[tokenStart] === "-" || input[tokenStart] === "+" ? tokenStart + 1 : tokenStart;
-      const label = sign * Number(input.slice(digitsStart, position));
+      const digits = input.slice(digitsStart, position);
+      if (digits.length > 15) return annularFailure({ kind: "unsafe-integer", position: tokenStart, token: digits.slice(0, 32) });
+      const normalized = digits.replace(/^0+(?=\d)/, "");
+      const maximumText = String(INPUT_LIMITS.maximumLabel);
+      if (normalized.length > maximumText.length || (normalized.length === maximumText.length && normalized > maximumText)) {
+        return annularFailure({ kind: "label-too-large", position: tokenStart, labelText: normalized.slice(0, 32), maximum: INPUT_LIMITS.maximumLabel });
+      }
+      const label = sign * Number(normalized);
       if (label < 1) return annularFailure({ kind: "non-positive-label", position: tokenStart, label });
       if (label > n) {
         return annularFailure({ kind: "out-of-range-label", position: tokenStart, label, maximum: n });

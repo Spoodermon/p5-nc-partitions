@@ -13,6 +13,14 @@ export function mathErrorMessage(error: MathError): string {
   switch (error.kind) {
     case "empty-input":
       return "Enter a nonempty partition.";
+    case "input-too-long":
+      return `Input is too long; the supported maximum is ${error.maximum} characters.`;
+    case "unsafe-integer":
+      return `Integer near position ${error.position + 1} is outside safe integer syntax.`;
+    case "label-too-large":
+      return `Label ${error.labelText} exceeds the supported maximum ${error.maximum}.`;
+    case "support-too-large":
+      return `This visualizer currently supports disc diagrams with n ≤ ${error.maximum}.`;
     case "malformed-syntax":
       return `${error.message} (position ${error.position + 1}).`;
     case "non-integer-label":

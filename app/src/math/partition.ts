@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "../config/limits";
 import { failure, success, type Block, type DiscPartition, type Permutation, type Result } from "./types";
 import { permutationCycles } from "./permutation";
 
@@ -28,6 +29,8 @@ export function createDiscPartition(blocksInput: readonly (readonly number[])[])
         return failure({ kind: "non-integer-label", position: 0, token: String(label) });
       }
       if (label < 1) return failure({ kind: "non-positive-label", position: 0, label });
+      if (!Number.isSafeInteger(label)) return failure({ kind: "unsafe-integer", position: 0, token: String(label) });
+      if (label > INPUT_LIMITS.maximumLabel) return failure({ kind: "label-too-large", position: 0, labelText: String(label), maximum: INPUT_LIMITS.maximumLabel });
       if (seen.has(label)) return failure({ kind: "duplicate-label", label });
       seen.add(label);
       maximum = Math.max(maximum, label);
@@ -37,6 +40,7 @@ export function createDiscPartition(blocksInput: readonly (readonly number[])[])
     blocks.push(block);
   }
 
+  if (maximum > INPUT_LIMITS.discSupport) return failure({ kind: "support-too-large", maximum: INPUT_LIMITS.discSupport });
   const missing = Array.from({ length: maximum }, (_, index) => index + 1).filter((label) => !seen.has(label));
   if (missing.length > 0) return failure({ kind: "missing-support", missing: Object.freeze(missing) });
 

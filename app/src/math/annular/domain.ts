@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "../../config/limits";
 import { createPermutation, identityPermutation } from "../permutation";
 import type { Permutation } from "../types";
 import {
@@ -8,7 +9,15 @@ import {
 } from "./types";
 
 export function validAnnularBoundarySizes(p: number, q: number): boolean {
-  return Number.isInteger(p) && p >= 1 && Number.isInteger(q) && q >= 1;
+  return Number.isSafeInteger(p) && p >= 1 && Number.isSafeInteger(q) && q >= 1
+    && p <= INPUT_LIMITS.annularP && q <= INPUT_LIMITS.annularQ && p + q <= INPUT_LIMITS.annularTotalSupport;
+}
+
+function invalidBoundaryResult(p: number, q: number): AnnularResult<never> {
+  if (!Number.isSafeInteger(p) || p < 1 || !Number.isSafeInteger(q) || q < 1) {
+    return annularFailure({ kind: "invalid-boundary-size", p, q });
+  }
+  return annularFailure({ kind: "boundary-size-too-large", p, q, maximumP: INPUT_LIMITS.annularP, maximumQ: INPUT_LIMITS.annularQ, maximumTotal: INPUT_LIMITS.annularTotalSupport });
 }
 
 export function createAnnularPermutation(
@@ -17,7 +26,7 @@ export function createAnnularPermutation(
   permutation: Permutation,
 ): AnnularResult<AnnularPermutation> {
   if (!validAnnularBoundarySizes(p, q)) {
-    return annularFailure({ kind: "invalid-boundary-size", p, q });
+    return invalidBoundaryResult(p, q);
   }
   if (permutation.n !== p + q) {
     return annularFailure({ kind: "support-size-mismatch", expected: p + q, actual: permutation.n });
@@ -44,7 +53,7 @@ export function annularPermutationFromImages(
   images: readonly number[],
 ): AnnularResult<AnnularPermutation> {
   if (!validAnnularBoundarySizes(p, q)) {
-    return annularFailure({ kind: "invalid-boundary-size", p, q });
+    return invalidBoundaryResult(p, q);
   }
   const permutation = createPermutation(images);
   if (!permutation.ok) {

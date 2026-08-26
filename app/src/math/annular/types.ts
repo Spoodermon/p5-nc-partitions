@@ -24,6 +24,10 @@ export interface AnnularNoncrossingAnalysis {
 
 export type AnnularError =
   | { readonly kind: "invalid-boundary-size"; readonly p: number; readonly q: number }
+  | { readonly kind: "boundary-size-too-large"; readonly p: number; readonly q: number; readonly maximumP: number; readonly maximumQ: number; readonly maximumTotal: number }
+  | { readonly kind: "input-too-long"; readonly maximum: number }
+  | { readonly kind: "unsafe-integer"; readonly position: number; readonly token: string }
+  | { readonly kind: "label-too-large"; readonly position: number; readonly labelText: string; readonly maximum: number }
   | { readonly kind: "support-size-mismatch"; readonly expected: number; readonly actual: number }
   | { readonly kind: "malformed-syntax"; readonly position: number; readonly message: string }
   | { readonly kind: "non-integer-label"; readonly position: number; readonly token: string }

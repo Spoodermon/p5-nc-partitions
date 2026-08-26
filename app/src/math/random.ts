@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "../config/limits";
 import { createDiscPartition } from "./partition";
 import type { DiscPartition } from "./types";
 
@@ -18,7 +19,7 @@ function randomBlocksInInterval(start: number, end: number, random: RandomSource
 }
 
 export function randomNoncrossingPartition(n: number, random: RandomSource = Math.random): DiscPartition {
-  if (!Number.isInteger(n) || n < 1) throw new RangeError("n must be a positive integer");
+  if (!Number.isSafeInteger(n) || n < 1 || n > INPUT_LIMITS.discSupport) throw new RangeError(`n must be an integer in [1,${INPUT_LIMITS.discSupport}]`);
   const created = createDiscPartition(randomBlocksInInterval(1, n, random));
   if (!created.ok) throw new Error(`Random partition invariant failed: ${created.error.kind}`);
   return created.value;
@@ -26,7 +27,9 @@ export function randomNoncrossingPartition(n: number, random: RandomSource = Mat
 
 /** Build an admitted annular block set, optionally with one rooted through-block. */
 export function randomAnnularBlockNotation(p: number, q: number, random: RandomSource = Math.random, throughProbability = 0.72): string {
-  if (!Number.isInteger(p) || p < 1 || !Number.isInteger(q) || q < 1) throw new RangeError("p and q must be positive integers");
+  if (!Number.isSafeInteger(p) || p < 1 || !Number.isSafeInteger(q) || q < 1 || p > INPUT_LIMITS.annularP || q > INPUT_LIMITS.annularQ || p + q > INPUT_LIMITS.annularTotalSupport) {
+    throw new RangeError("p and q exceed the supported annular limits");
+  }
   const outer = randomBlocksInInterval(1, p, random);
   const inner = randomBlocksInInterval(p + 1, p + q, random);
   const blocks = random() < throughProbability

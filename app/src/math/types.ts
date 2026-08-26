@@ -14,6 +14,10 @@ export interface Permutation {
 
 export type MathError =
   | { readonly kind: "empty-input" }
+  | { readonly kind: "input-too-long"; readonly maximum: number }
+  | { readonly kind: "unsafe-integer"; readonly position: number; readonly token: string }
+  | { readonly kind: "label-too-large"; readonly position: number; readonly labelText: string; readonly maximum: number }
+  | { readonly kind: "support-too-large"; readonly maximum: number }
   | { readonly kind: "malformed-syntax"; readonly position: number; readonly message: string }
   | { readonly kind: "non-integer-label"; readonly position: number; readonly token: string }
   | { readonly kind: "non-positive-label"; readonly position: number; readonly label: number }

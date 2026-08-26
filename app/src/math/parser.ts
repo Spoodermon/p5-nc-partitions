@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "../config/limits";
 import { createDiscPartition } from "./partition";
 import { noncrossingResult } from "./noncrossing";
 import { failure, type DiscPartition, type Result } from "./types";
@@ -11,6 +12,7 @@ function isDigit(character: string | undefined): boolean {
 }
 
 export function parseDiscPartition(input: string): Result<DiscPartition> {
+  if (input.length > INPUT_LIMITS.inputCharacters) return failure({ kind: "input-too-long", maximum: INPUT_LIMITS.inputCharacters });
   if (input.trim().length === 0) return failure({ kind: "empty-input" });
 
   const blocks: number[][] = [];
@@ -52,7 +54,15 @@ export function parseDiscPartition(input: string): Result<DiscPartition> {
       }
 
       while (isDigit(input[position])) position += 1;
-      const unsigned = Number(input.slice(sign === -1 || input[tokenStart] === "+" ? tokenStart + 1 : tokenStart, position));
+      const digitsStart = sign === -1 || input[tokenStart] === "+" ? tokenStart + 1 : tokenStart;
+      const digits = input.slice(digitsStart, position);
+      if (digits.length > 15) return failure({ kind: "unsafe-integer", position: tokenStart, token: digits.slice(0, 32) });
+      const normalized = digits.replace(/^0+(?=\d)/, "");
+      const maximumText = String(INPUT_LIMITS.maximumLabel);
+      if (normalized.length > maximumText.length || (normalized.length === maximumText.length && normalized > maximumText)) {
+        return failure({ kind: "label-too-large", position: tokenStart, labelText: normalized.slice(0, 32), maximum: INPUT_LIMITS.maximumLabel });
+      }
+      const unsigned = Number(normalized);
       const label = sign * unsigned;
       if (label < 1) return failure({ kind: "non-positive-label", position: tokenStart, label });
       block.push(label);

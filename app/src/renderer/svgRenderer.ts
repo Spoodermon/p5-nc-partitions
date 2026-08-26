@@ -9,14 +9,13 @@ import {
   type DirectedEdge,
 } from "../geometry/disc";
 
-const CYCLE_COLORS = ["#176b75", "#9a4f22", "#5b4b99", "#28784d", "#9a3655"] as const;
-
 export interface RenderOptions {
   readonly showDirection: boolean;
   readonly showRibbonFill: boolean;
   readonly selectedEdgeId: string | null;
   readonly cycleEdgeWidth: number;
   readonly outerBoundaryWidth: number;
+  readonly cycleColors?: readonly string[];
 }
 
 function closedCyclePath(paths: readonly string[]): string {
@@ -67,6 +66,7 @@ export function renderDiagram(
   container.replaceChildren();
 
   const layout = createDiscLayout(example);
+  const colors = options.cycleColors?.length ? options.cycleColors : ["#176b75"];
   const vertexById = new Map(layout.vertices.map((vertex) => [vertex.id, vertex]));
   const draw = SVG().addTo(container).size("100%", "100%").viewbox(0, 0, VIEWBOX_SIZE, VIEWBOX_SIZE);
   draw.attr({
@@ -103,14 +103,14 @@ export function renderDiagram(
     const paths = routedEdges.filter(({ edge }) => edge.cycleIndex === cycleIndex).map(({ geometry }) => geometry.path);
     if (paths.length === 0) continue;
     fillGroup.path(closedCyclePath(paths))
-      .fill(CYCLE_COLORS[cycleIndex % CYCLE_COLORS.length] ?? CYCLE_COLORS[0])
+      .fill(colors[cycleIndex % colors.length] ?? colors[0] ?? "#176b75")
       .opacity(0.14)
       .stroke("none")
       .attr({ "data-cycle-fill": String(cycleIndex) });
   }
 
   routedEdges.forEach(({ edge, geometry }) => {
-    const color = CYCLE_COLORS[edge.cycleIndex % CYCLE_COLORS.length] ?? CYCLE_COLORS[0];
+    const color = colors[edge.cycleIndex % colors.length] ?? colors[0] ?? "#176b75";
     const path = edgeGroup
       .path(geometry.path)
       .fill("none")
@@ -136,7 +136,7 @@ export function renderDiagram(
 
   layout.vertices.forEach((vertex) => {
     const cycleIndex = example.cycles.findIndex((cycle) => cycle.includes(vertex.id));
-    const color = CYCLE_COLORS[Math.max(0, cycleIndex) % CYCLE_COLORS.length] ?? CYCLE_COLORS[0];
+    const color = colors[Math.max(0, cycleIndex) % colors.length] ?? colors[0] ?? "#176b75";
     vertexGroup.circle(17).center(vertex.x, vertex.y).fill(color).stroke({ color: "#ffffff", width: 2.5 });
     vertexGroup
       .text(String(vertex.id))

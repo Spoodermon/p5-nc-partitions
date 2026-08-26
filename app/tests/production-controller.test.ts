@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { routeAnnularPermutation, serializeRoutedAnnularDiagram, type RoutedAnnularDiagram } from "../src/geometry/annular-routing";
 import { annularPermutationToString, parseAnnularPermutation, parseNoncrossingPartition, partitionToString } from "../src/math";
 import { processAnnularInput } from "../src/production/annularController";
+import { canonicalizeAnnularBlocks } from "../src/production/annularController";
 import { ProductionSurfaceState } from "../src/production/surfaceState";
 
 describe("production mathematical mode controller", () => {
@@ -26,7 +27,7 @@ describe("production mathematical mode controller", () => {
     expect(!malformed.ok && malformed.error.kind).toBe("syntax-domain");
     const range = processAnnularInput("2", "2", "(1 5)");
     expect(!range.ok && range.error.message).toBe("Label 5 exceeds p+q=4.");
-    const crossing = processAnnularInput("2", "2", "(1 3 2 4)");
+    const crossing = processAnnularInput("4", "1", "(1 3)(2 4)(5)");
     expect(!crossing.ok && crossing.error.kind).toBe("mathematically-crossing");
 
     const router = vi.fn((value): RoutedAnnularDiagram => {
@@ -63,6 +64,21 @@ describe("production mathematical mode controller", () => {
       expect(serializeRoutedAnnularDiagram(accepted.routed)).toBe(identity);
     }
     expect(router).toHaveBeenCalledOnce();
+  });
+
+  it("accepts either cyclic spelling of an annular block and emits one canonical order", () => {
+    const a = processAnnularInput("10", "7", "(1 11 10)(2 17)(3)(4)(5)(6)(7)(8)(9)(12)(13)(14)(15)(16)");
+    const b = processAnnularInput("10", "7", "(1 10 11)(2 17)(3)(4)(5)(6)(7)(8)(9)(12)(13)(14)(15)(16)");
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    if (a.ok && b.ok) expect(a.canonicalNotation).toBe(b.canonicalNotation);
+  });
+
+  it("canonicalizes the reported (8,5) block set", () => {
+    const parsed = parseAnnularPermutation("(1 2 3)(4 6)(5)(7 8 9 12 13)(10 11)", 8, 5);
+    if (!parsed.ok) throw new Error(parsed.error.kind);
+    const canonical = canonicalizeAnnularBlocks(parsed.value);
+    expect(canonical && annularPermutationToString(canonical)).toMatchInlineSnapshot(`"(1 2 3)(4 6)(5)(7 8 9 12 13)(10 11)"`);
   });
 
   it("restores the last valid mathematical object when modes switch", () => {

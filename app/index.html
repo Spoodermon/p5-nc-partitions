@@ -19,7 +19,6 @@
         <label class="example-control">Example<select id="example-select"></select></label>
         <div class="selection-summary" aria-live="polite"><output id="selection-output">No edge selected</output><button id="clear-button" type="button" disabled>Clear</button></div>
         <label class="check-control"><input id="direction-toggle" type="checkbox" />Show direction</label>
-        <label class="check-control"><input id="ribbon-fill-toggle" type="checkbox" />Ribbon fill</label>
         <button id="export-button" class="icon-button" type="button" aria-label="Download SVG" title="Download SVG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4" /></svg></button>
 
         <div id="disc-controls" class="mode-inputs">
@@ -39,16 +38,29 @@
             <label class="annular-notation" for="annular-input">Permutation<input id="annular-input" type="text" spellcheck="false" autocomplete="off" aria-describedby="annular-message" /></label>
             <button type="submit">Render</button>
           </form>
+          <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="annular-display-mode" value="permutation" checked /> τ</label><label><input type="radio" name="annular-display-mode" value="kreweras" /> Kr(τ)</label></fieldset>
           <p id="annular-message" class="input-message" aria-live="polite"></p>
+          <div id="routing-progress" class="routing-progress" hidden><progress aria-label="Annular routing progress"></progress><span id="routing-progress-label">Preparing routing search…</span></div>
         </div>
-
-        <div class="thickness-controls" aria-label="Line thickness controls">
+      </section>
+      <section class="workspace">
+        <aside class="side-panel thickness-controls" aria-label="Line thickness controls">
+          <h2>Line weights</h2>
           <label>Cycle edges<input id="cycle-edge-thickness" type="range" min="1" max="8" step="0.2" value="3.4" /><output id="cycle-edge-thickness-output" for="cycle-edge-thickness">3.4</output></label>
           <label>Outer boundary<input id="outer-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="outer-boundary-thickness-output" for="outer-boundary-thickness">2.5</output></label>
           <label id="inner-boundary-control" hidden>Inner boundary<input id="inner-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="inner-boundary-thickness-output" for="inner-boundary-thickness">2.5</output></label>
-        </div>
+        </aside>
+        <div id="figure" class="figure" aria-label="Permutation diagram"></div>
+        <aside class="side-panel color-controls" aria-label="Cycle colour controls">
+          <h2>Cycle colours</h2>
+          <label class="field-label" for="color-mode">Assignment<select id="color-mode"><option value="palette">Palette</option><option value="single">One colour</option><option value="kind">By annular kind</option><option value="custom">Per cycle</option></select></label>
+          <div id="palette-options" class="palette-options" aria-label="Named palettes"></div>
+          <label id="single-color-control" class="color-row" hidden>All cycles<input id="single-color" type="color" value="#176b75" /></label>
+          <div id="kind-color-controls" hidden><label class="color-row">Outer–outer<input id="outer-cycle-color" type="color" value="#176b75" /></label><label class="color-row">Inner–inner<input id="inner-cycle-color" type="color" value="#a35428" /></label><label class="color-row">Through<input id="through-cycle-color" type="color" value="#62549a" /></label></div>
+          <div id="cycle-color-controls" class="cycle-color-list" hidden></div>
+          <label class="check-control fill-control"><input id="ribbon-fill-toggle" type="checkbox" />Ribbon fill</label>
+        </aside>
       </section>
-      <section class="workspace"><div id="figure" class="figure" aria-label="Permutation diagram"></div></section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

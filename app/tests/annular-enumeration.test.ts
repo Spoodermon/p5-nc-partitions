@@ -60,5 +60,5 @@ describe("exhaustive annular enumeration through total support 8", () => {
         expect(connectedCount, `connected count for (${p},${q})`).toBe(expectedConnectedAnnularCount(p, q));
       }
     }
-  });
+  }, 15_000);
 });

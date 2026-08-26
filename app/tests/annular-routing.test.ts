@@ -240,6 +240,23 @@ describe("global annular routing", () => {
     expect(edge?.route.angularDisplacement).toBeLessThan(0);
   });
 
+  it("routes the reported (8,5) larger through-cycle fixture", () => {
+    const parsed = parseAnnularPermutation("(1 2 3)(4 6)(5)(7 8 9 12 13)(10 11)", 8, 5);
+    if (!parsed.ok) throw new Error(parsed.error.kind);
+    const routed = routeAnnularPermutation(parsed.value);
+    expect(routed.isRoutable).toBe(true);
+  });
+
+  it("scales singleton breadth to available boundary spacing in the sparse (10,7) fixture", () => {
+    const fixture = parsed("(1 11 12 10)(2 17)(3 5 16)(4)(6)(7)(8)(9)(13)(14)(15)", 10, 7);
+    const routed = routeAnnularPermutation(fixture);
+    expect(routed.isRoutable).toBe(true);
+    if (!routed.isRoutable) return;
+    const singleton = routed.routes.find((route) => route.edge.startLabel === 4 && route.edge.role === "singleton");
+    expect(singleton?.excursion).toBeGreaterThan(0);
+    expect(Math.abs(singleton?.angularBias ?? 0)).toBeGreaterThanOrEqual(0.24);
+  }, 10_000);
+
   it("is deterministic and gives opposite directed two-cycle edges distinct routes", () => {
     const fixture = parsed("(1 3)(2)(4)", 2, 2);
     const first = routeAnnularPermutation(fixture, { phaseCandidateCount: 5 });

@@ -100,6 +100,14 @@ function solveGreedyBundleState(bundleSets: readonly (readonly CycleRouteBundle[
   });
 }
 
+function singletonFirst(bundleSets: readonly (readonly CycleRouteBundle[])[]): readonly (readonly CycleRouteBundle[])[] {
+  return [...bundleSets].sort((a, b) => {
+    const aSingleton = a[0]?.routes[0]?.edge.role === "singleton" ? 0 : 1;
+    const bSingleton = b[0]?.routes[0]?.edge.role === "singleton" ? 0 : 1;
+    return aSingleton - bSingleton;
+  });
+}
+
 export function routeAnnularPermutation(value: AnnularPermutation, options: RoutingOptions = {}): RoutedAnnularDiagram {
   const started = performance.now();
   if (!isAnnularNoncrossing(value)) return Object.freeze({ isRoutable: false, permutation: value, reason: "not-annular-noncrossing", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
@@ -142,7 +150,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           endpointRadius,
         ));
         searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
-        const solution = solveGreedyBundleState(bundleSets, hard, endpointRadius)
+        const solution = solveGreedyBundleState(singletonFirst(bundleSets), hard, endpointRadius)
           ?? solveBundleState(bundleSets, hard, endpointRadius, fastNodeLimit);
         if (!solution) { searchNodes += fastNodeLimit; continue; }
         searchNodes += solution.nodes;
@@ -173,6 +181,33 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           }),
         } satisfies RoutedAnnularSuccess);
       }
+    }
+    // A few admitted large diagrams require a non-principal lift. Keep this
+    // fallback deliberately compact: one phase, the wrap-adjacent seams, and
+    // bounded candidates. This covers the larger through-cycle fixtures while
+    // preserving a predictable production latency ceiling.
+    const layout = createAnnularLayout(value.p, value.q, { innerPhase: 0 });
+    const fallbackHard = Math.max(options.strokeWidth ?? DEFAULT_ROUTE_STROKE_WIDTH, hard - DEFAULT_VISUAL_GAP);
+    for (const seam of [...annularSeamStates(layout)].reverse().slice(0, 6)) {
+      if (!seamHasPlanarPureSpans(value, seam)) continue;
+      const corridors = createCycleCorridors(value, seam);
+      const bundleSets = corridors.map((corridor) => generateCycleBundles(
+        layout, seam, corridor,
+        edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex),
+        Math.min(sampleCount, 33), "all", Math.min(maximumCandidatesPerEdge * 2, 280), fallbackHard, endpointRadius,
+      ));
+      searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
+      const solution = solveGreedyBundleState(singletonFirst(bundleSets), fallbackHard, endpointRadius)
+        ?? solveBundleState(bundleSets, fallbackHard, endpointRadius, fastNodeLimit);
+      if (!solution) { searchNodes += fastNodeLimit; continue; }
+      const clearance = analyzeRouteClearance(solution.routes, layout, fallbackHard, endpointRadius);
+      if (clearance.hardCollisionCount !== 0 || clearance.minimumClearance < fallbackHard) continue;
+      return Object.freeze({
+        isRoutable: true, permutation: value, layout, phase: layout.innerPhase,
+        outerSeam: seam.outerSeam, innerSeam: seam.innerSeam, corridors,
+        routes: Object.freeze(solution.routes),
+        diagnostics: Object.freeze({ ...clearance, searchedPhaseCount: fastPhases.length, searchedCandidateCount: searchedCandidates, searchNodes: searchNodes + solution.nodes, elapsedMilliseconds: performance.now() - started, phaseScore: solution.score, routeScore: solution.score, preferredClearanceDeficit: Math.max(0, preferred - clearance.minimumClearance), topologicalRejections, principalThroughFallbackUsed: true, throughRoutes: Object.freeze([]) }),
+      } satisfies RoutedAnnularSuccess);
     }
     return Object.freeze({
       isRoutable: false,

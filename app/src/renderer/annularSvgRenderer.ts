@@ -3,8 +3,6 @@ import { ANNULAR_VIEWBOX_SIZE, type AnnularRoute, type Point, type Vector } from
 import { annularCycleFillRegions, type AnnularDirectedEdge } from "../geometry/annular-routing";
 import type { AnnularDiagramModel } from "./annularModel";
 
-const PALETTE = ["#285f6b", "#9a552d", "#62549a", "#347653", "#a33f56", "#80651f"] as const;
-
 export interface AnnularRenderOptions {
   readonly showDirection: boolean;
   readonly showRibbonFill: boolean;
@@ -12,6 +10,7 @@ export interface AnnularRenderOptions {
   readonly cycleEdgeWidth: number;
   readonly outerBoundaryWidth: number;
   readonly innerBoundaryWidth: number;
+  readonly cycleColors?: readonly string[];
 }
 
 export interface AnnularRenderCallbacks {
@@ -65,6 +64,7 @@ export function renderAnnularDiagram(
 ): AnnularRenderResult {
   container.replaceChildren();
   const { routed } = model;
+  const colors = options.cycleColors?.length ? options.cycleColors : ["#285f6b"];
   const draw = SVG().addTo(container).size("100%", "100%").viewbox(0, 0, ANNULAR_VIEWBOX_SIZE, ANNULAR_VIEWBOX_SIZE);
   draw.attr({ role: "img", "aria-label": `${model.notation} annular permutation diagram for p ${model.permutation.p}, q ${model.permutation.q}`, preserveAspectRatio: "xMidYMid meet" });
   const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
@@ -80,11 +80,11 @@ export function renderAnnularDiagram(
   boundaryGroup.circle(routed.layout.innerRadius * 2).center(500, 500).fill("#edf1f3").stroke({ color: "#aeb9c0", width: options.innerBoundaryWidth }).attr({ "data-boundary": "inner" });
 
   if (options.showRibbonFill) for (const region of annularCycleFillRegions(routed.routes)) {
-    fillGroup.path(closedPath(region.points)).fill(PALETTE[region.cycleIndex % PALETTE.length] as string).opacity(0.14).stroke("none").attr({ "data-cycle-fill": String(region.cycleIndex) });
+    fillGroup.path(closedPath(region.points)).fill(colors[region.cycleIndex % colors.length] as string).opacity(0.14).stroke("none").attr({ "data-cycle-fill": String(region.cycleIndex) });
   }
 
   routed.routes.forEach((candidate) => {
-    const color = PALETTE[candidate.edge.cycleIndex % PALETTE.length] as string;
+    const color = colors[candidate.edge.cycleIndex % colors.length] as string;
     const path = edgeGroup.path(sampledAnnularPath(candidate.route)).fill("none")
       .stroke({ color, width: options.cycleEdgeWidth, linecap: "round", linejoin: "round" })
       .addClass("permutation-edge")

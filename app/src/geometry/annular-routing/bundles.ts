@@ -352,14 +352,20 @@ function pureBundles(
   if (edges.length === 1 && edges[0]?.role === "singleton") {
     const edge = edges[0];
     const variants: CycleRouteBundle[] = [];
-    for (const excursion of [0.03, 0.05, 0.08, 0.1, 0.14, 0.19, 0.25]) for (const angularBias of [0.08, -0.08, 0.12, -0.12, 0.16, -0.16, 0.24, -0.24, 0.34, -0.34]) {
+    const boundarySize = edge.startBoundary === "outer" ? layout.p : layout.q;
+    const availableAngularSpace = TWO_PI / boundarySize;
+    const preferredBias = Math.min(0.34, Math.max(0.16, availableAngularSpace * 0.45));
+    const excursions = [0.03, 0.05, 0.08, 0.1, 0.14, 0.19, 0.25];
+    for (const excursion of excursions) for (const angularBias of [0.08, -0.08, 0.12, -0.12, 0.16, -0.16, 0.24, -0.24, 0.34, -0.34]) {
       const route = createAnnularRoute(layout, {
         startLabel: edge.startLabel,
         endLabel: edge.endLabel,
         excursion,
         angularBias,
       });
-      const localScore = Math.abs(excursion - 0.14) + Math.abs(Math.abs(angularBias) - 0.16) * 0.1;
+      // Scale loop breadth to the boundary spacing. Dense boundaries retain a
+      // compact loop, while sparse sectors use their available angular room.
+      const localScore = Math.abs(excursion - 0.14) + Math.abs(Math.abs(angularBias) - preferredBias) * 0.2;
       const routed = candidate(layout, edge, route, 0, localScore, `singleton:${excursion}:${angularBias}`, sampleCount, "analytical-bump");
       variants.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze([routed]), score: routed.localScore, key: routed.key }));
     }

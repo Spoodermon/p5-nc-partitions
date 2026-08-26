@@ -1,17 +1,20 @@
 import "./style.css";
 import type { DirectedEdge } from "./geometry/disc";
-import type { AnnularDirectedEdge } from "./geometry/annular-routing";
-import { krewerasComplement, mathErrorMessage, parseNoncrossingPartition, partitionToString, type DiscPartition } from "./math";
-import { processAnnularInput } from "./production/annularController";
+import { routeAnnularPermutation, type AnnularDirectedEdge } from "./geometry/annular-routing";
+import { annularKrewerasComplement, annularPermutationToString, classifiedAnnularCycles, krewerasComplement, mathErrorMessage, parseNoncrossingPartition, partitionToString, type DiscPartition } from "./math";
+import { processAnnularInput, type AcceptedAnnularInput } from "./production/annularController";
 import { ProductionSurfaceState, type SurfaceMode } from "./production/surfaceState";
 import { annularDiagram } from "./renderer/annularModel";
 import { renderAnnularDiagram } from "./renderer/annularSvgRenderer";
 import { downloadSvg } from "./renderer/export";
 import { partitionDiagram } from "./renderer/model";
 import { renderDiagram } from "./renderer/svgRenderer";
+import { DEFAULT_CYCLE_COLOR, NAMED_PALETTES, paletteById } from "./renderer/colors";
 import { ANNULAR_EXAMPLES, EXAMPLES, getAnnularExample, getExample } from "./ui/examples";
 
 type DiscDisplayMode = "partition" | "kreweras";
+type AnnularDisplayMode = "permutation" | "kreweras";
+type ColorMode = "palette" | "single" | "kind" | "custom";
 type SelectedEdge = { readonly surface: "disc"; readonly edge: DirectedEdge } | { readonly surface: "annular"; readonly edge: AnnularDirectedEdge } | null;
 
 const figure = requireElement<HTMLDivElement>("figure");
@@ -38,10 +41,26 @@ const annularQ = requireElement<HTMLInputElement>("annular-q");
 const annularInput = requireElement<HTMLInputElement>("annular-input");
 const annularMessage = requireElement<HTMLParagraphElement>("annular-message");
 const annularControls = requireElement<HTMLDivElement>("annular-controls");
+const routingProgress = requireElement<HTMLDivElement>("routing-progress");
+const routingProgressLabel = requireElement<HTMLSpanElement>("routing-progress-label");
+const colorModeControl = requireElement<HTMLSelectElement>("color-mode");
+const paletteOptions = requireElement<HTMLDivElement>("palette-options");
+const singleColorControl = requireElement<HTMLLabelElement>("single-color-control");
+const singleColor = requireElement<HTMLInputElement>("single-color");
+const kindColorControls = requireElement<HTMLDivElement>("kind-color-controls");
+const outerCycleColor = requireElement<HTMLInputElement>("outer-cycle-color");
+const innerCycleColor = requireElement<HTMLInputElement>("inner-cycle-color");
+const throughCycleColor = requireElement<HTMLInputElement>("through-cycle-color");
+const cycleColorControls = requireElement<HTMLDivElement>("cycle-color-controls");
 const surfaceControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="surface-mode"]'));
 const discDisplayControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="disc-display-mode"]'));
+const annularDisplayControls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="annular-display-mode"]'));
 
 let discDisplayMode: DiscDisplayMode = "partition";
+let annularDisplayMode: AnnularDisplayMode = "permutation";
+let annularComplementState: AcceptedAnnularInput | null = null;
+let selectedPalette = "tidepool";
+const customColors = new Map<string, string>();
 const state = new ProductionSurfaceState(
   requiredDiscPartition(getExample("two-cycle").notation),
   requiredAnnularState(getAnnularExample("through-two-cycle")),
@@ -71,6 +90,48 @@ function displayedDiscPartition(): DiscPartition {
   return discDisplayMode === "partition" ? state.discPartition : krewerasComplement(state.discPartition);
 }
 
+function displayedAnnularState(): AcceptedAnnularInput {
+  return annularDisplayMode === "kreweras" && annularComplementState ? annularComplementState : state.annular;
+}
+
+function cycleDescriptors(): readonly { notation: string; kind: "outer" | "inner" | "through" }[] {
+  if (state.mode === "disc") {
+    return partitionDiagram(displayedDiscPartition()).cycles.map((cycle) => ({ notation: `(${cycle.join(" ")})`, kind: "outer" as const }));
+  }
+  return classifiedAnnularCycles(displayedAnnularState().permutation).map(({ cycle, kind }) => ({ notation: `(${cycle.join(" ")})`, kind }));
+}
+
+function cycleColors(): readonly string[] {
+  const palette = paletteById(selectedPalette).colors;
+  return cycleDescriptors().map((cycle, index) => {
+    switch (colorModeControl.value as ColorMode) {
+      case "single": return singleColor.value;
+      case "kind": return cycle.kind === "outer" ? outerCycleColor.value : cycle.kind === "inner" ? innerCycleColor.value : throughCycleColor.value;
+      case "custom": return customColors.get(cycle.notation) ?? palette[index % palette.length] ?? DEFAULT_CYCLE_COLOR;
+      default: return palette[index % palette.length] ?? DEFAULT_CYCLE_COLOR;
+    }
+  });
+}
+
+function updateColorPanel(): void {
+  const mode = colorModeControl.value as ColorMode;
+  paletteOptions.hidden = mode !== "palette";
+  singleColorControl.hidden = mode !== "single";
+  kindColorControls.hidden = mode !== "kind" || state.mode !== "annular";
+  cycleColorControls.hidden = mode !== "custom";
+  cycleColorControls.replaceChildren();
+  if (mode !== "custom") return;
+  const palette = paletteById(selectedPalette).colors;
+  cycleDescriptors().forEach((cycle, index) => {
+    const label = document.createElement("label");
+    label.className = "color-row"; label.append(cycle.notation);
+    const input = document.createElement("input"); input.type = "color";
+    input.value = customColors.get(cycle.notation) ?? palette[index % palette.length] ?? DEFAULT_CYCLE_COLOR;
+    input.addEventListener("input", () => { customColors.set(cycle.notation, input.value); redraw(); });
+    label.append(input); cycleColorControls.append(label);
+  });
+}
+
 function updateSelection(edge: SelectedEdge): void {
   if (!edge) selectionOutput.value = "No edge selected";
   else if (edge.surface === "disc") {
@@ -78,7 +139,7 @@ function updateSelection(edge: SelectedEdge): void {
     selectionOutput.value = `cycle: (${value.cycle.join(" ")}) · edge: ${value.start} → ${value.end} · role: ${value.role}`;
   } else {
     const value = edge.edge;
-    const cycle = state.annular.routed.corridors[value.cycleIndex];
+    const cycle = displayedAnnularState().routed.corridors[value.cycleIndex];
     const kind = cycle?.kind === "outer-collar" ? "outer" : cycle?.kind === "inner-collar" ? "inner" : "through";
     selectionOutput.value = `cycle: (${cycle?.cycle.join(" ") ?? ""}) · edge: ${value.startLabel} → ${value.endLabel} · cycle kind: ${kind} · role: ${value.role}`;
   }
@@ -86,27 +147,33 @@ function updateSelection(edge: SelectedEdge): void {
 }
 
 function redraw(): void {
+  updateColorPanel();
+  const colors = cycleColors();
   if (state.mode === "disc") {
     const rendered = renderDiagram(figure, partitionDiagram(displayedDiscPartition()), {
       showDirection: directionToggle.checked,
       showRibbonFill: ribbonFillToggle.checked,
       selectedEdgeId: selectedEdge?.surface === "disc" ? selectedEdge.edge.id : null,
       cycleEdgeWidth: Number(cycleWidth.value), outerBoundaryWidth: Number(outerWidth.value),
+      cycleColors: colors,
     }, { onSelect: (edge) => { selectedEdge = { surface: "disc", edge }; updateSelection(selectedEdge); redraw(); } });
     currentSvg = rendered.svg;
     const prefix = discDisplayMode === "partition" ? "π" : "Kr(π)";
     discMessage.dataset.state = "valid";
     discMessage.textContent = `${prefix} = ${partitionToString(displayedDiscPartition())}`;
   } else {
-    const rendered = renderAnnularDiagram(figure, annularDiagram(state.annular.permutation, state.annular.routed), {
+    const annularState = displayedAnnularState();
+    const rendered = renderAnnularDiagram(figure, annularDiagram(annularState.permutation, annularState.routed), {
       showDirection: directionToggle.checked,
       showRibbonFill: ribbonFillToggle.checked,
       selectedEdgeId: selectedEdge?.surface === "annular" ? selectedEdge.edge.id : null,
       cycleEdgeWidth: Number(cycleWidth.value), outerBoundaryWidth: Number(outerWidth.value), innerBoundaryWidth: Number(innerWidth.value),
+      cycleColors: colors,
     }, { onSelect: (edge) => { selectedEdge = { surface: "annular", edge }; updateSelection(selectedEdge); redraw(); } });
     currentSvg = rendered.svg;
     annularMessage.dataset.state = "valid";
-    annularMessage.textContent = `τ = ${state.annular.canonicalNotation} · (p,q)=(${state.annular.permutation.p},${state.annular.permutation.q})`;
+    const prefix = annularDisplayMode === "kreweras" ? "Kr(τ)" : "τ";
+    annularMessage.textContent = `${prefix} = ${annularState.canonicalNotation} · (p,q)=(${annularState.permutation.p},${annularState.permutation.q})`;
   }
 }
 
@@ -122,14 +189,22 @@ function acceptAnnularInput(p: string, q: string, input: string): boolean {
   const result = processAnnularInput(p, q, input);
   if (!result.ok) { annularMessage.dataset.state = "error"; annularMessage.textContent = result.error.message; return false; }
   state.annular = result;
+  annularComplementState = null;
+  annularDisplayMode = "permutation";
+  annularDisplayControls.forEach((control) => { control.checked = control.value === "permutation"; });
   annularP.value = String(result.permutation.p); annularQ.value = String(result.permutation.q); annularInput.value = result.canonicalNotation;
   selectedEdge = null; updateSelection(null); redraw(); return true;
 }
 
 function queueAnnularInput(p: string, q: string, input: string): void {
   annularMessage.dataset.state = "pending";
-  annularMessage.textContent = "Routing…";
-  window.setTimeout(() => acceptAnnularInput(p, q, input), 0);
+  annularMessage.textContent = "Preparing annular diagram…";
+  routingProgress.hidden = false;
+  routingProgressLabel.textContent = "Validating boundary sizes and cycle blocks…";
+  window.setTimeout(() => {
+    routingProgressLabel.textContent = "Canonicalizing cycle order and searching phases, seams, and collision-free routes…";
+    window.setTimeout(() => { acceptAnnularInput(p, q, input); routingProgress.hidden = true; }, 20);
+  }, 20);
 }
 
 function populateExamples(): void {
@@ -142,7 +217,40 @@ function populateExamples(): void {
 function showSurface(mode: SurfaceMode): void {
   state.switchTo(mode); selectedEdge = null; updateSelection(null);
   discControls.hidden = mode !== "disc"; annularControls.hidden = mode !== "annular"; innerWidthControl.hidden = mode !== "annular";
+  surfaceControls.forEach((control) => { control.checked = control.value === mode; });
   populateExamples(); redraw();
+}
+
+function showAnnularComplement(): void {
+  routingProgress.hidden = false;
+  routingProgressLabel.textContent = "Computing Mingo–Nica annular Kreweras complement and routing its cycles…";
+  window.setTimeout(() => {
+    const permutation = annularKrewerasComplement(state.annular.permutation);
+    const routed = routeAnnularPermutation(permutation);
+    routingProgress.hidden = true;
+    if (!routed.isRoutable) {
+      annularDisplayMode = "permutation";
+      annularDisplayControls.forEach((control) => { control.checked = control.value === "permutation"; });
+      annularMessage.dataset.state = "error";
+      annularMessage.textContent = "Kr(τ) is defined, but the bounded production router could not place it without a collision.";
+      return;
+    }
+    annularComplementState = { ok: true, permutation, routed, canonicalNotation: annularPermutationToString(permutation) };
+    selectedEdge = null; updateSelection(null); redraw();
+  }, 20);
+}
+
+function populatePalettes(): void {
+  for (const palette of NAMED_PALETTES) {
+    const label = document.createElement("label"); label.className = "palette-option";
+    const radio = document.createElement("input"); radio.type = "radio"; radio.name = "cycle-palette"; radio.value = palette.id; radio.checked = palette.id === selectedPalette;
+    const content = document.createElement("span");
+    const name = document.createElement("span"); name.textContent = palette.name;
+    const strip = document.createElement("span"); strip.className = "palette-strip";
+    palette.colors.forEach((color) => { const swatch = document.createElement("i"); swatch.style.backgroundColor = color; strip.append(swatch); });
+    content.append(name, strip); label.append(radio, content); paletteOptions.append(label);
+    radio.addEventListener("change", () => { if (radio.checked) { selectedPalette = palette.id; redraw(); } });
+  }
 }
 
 exampleSelect.addEventListener("change", () => {
@@ -153,8 +261,15 @@ discForm.addEventListener("submit", (event) => { event.preventDefault(); acceptD
 annularForm.addEventListener("submit", (event) => { event.preventDefault(); queueAnnularInput(annularP.value, annularQ.value, annularInput.value); });
 surfaceControls.forEach((control) => control.addEventListener("change", () => { if (control.checked) showSurface(control.value as SurfaceMode); }));
 discDisplayControls.forEach((control) => control.addEventListener("change", () => { if (control.checked) { discDisplayMode = control.value as DiscDisplayMode; selectedEdge = null; updateSelection(null); redraw(); } }));
+annularDisplayControls.forEach((control) => control.addEventListener("change", () => {
+  if (!control.checked) return;
+  annularDisplayMode = control.value as AnnularDisplayMode;
+  if (annularDisplayMode === "kreweras" && !annularComplementState) showAnnularComplement();
+  else { selectedEdge = null; updateSelection(null); redraw(); }
+}));
 directionToggle.addEventListener("change", redraw);
 ribbonFillToggle.addEventListener("change", redraw);
+[colorModeControl, singleColor, outerCycleColor, innerCycleColor, throughCycleColor].forEach((control) => control.addEventListener("input", redraw));
 for (const [control, output] of [[cycleWidth, cycleWidthOutput], [outerWidth, outerWidthOutput], [innerWidth, innerWidthOutput]] as const) {
   control.addEventListener("input", () => { output.value = control.value; redraw(); });
 }
@@ -167,4 +282,5 @@ exportButton.addEventListener("click", () => {
 
 discInput.value = partitionToString(state.discPartition);
 annularP.value = String(state.annular.permutation.p); annularQ.value = String(state.annular.permutation.q); annularInput.value = state.annular.canonicalNotation;
+populatePalettes();
 updateSelection(null); showSurface("disc");

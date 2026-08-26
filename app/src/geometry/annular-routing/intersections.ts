@@ -137,6 +137,13 @@ export function analyzeRoutePair(
 
   const firstSegments = clippedRouteSegments(first.samples, sharedPoints, commonEndpointRadius);
   const secondSegments = clippedRouteSegments(second.samples, sharedPoints, commonEndpointRadius);
+  if (labels.length > 0 && commonEndpointRadius > 8) {
+    const tightFirst = clippedRouteSegments(first.samples, sharedPoints, 8);
+    const tightSecond = clippedRouteSegments(second.samples, sharedPoints, 8);
+    for (const [firstStart, firstEnd] of tightFirst) for (const [secondStart, secondEnd] of tightSecond) {
+      if (properIntersection(firstStart, firstEnd, secondStart, secondEnd)) intersects = true;
+    }
+  }
   for (const [firstStart, firstEnd] of firstSegments) {
     for (const [secondStart, secondEnd] of secondSegments) {
       const distance = segmentDistance(firstStart, firstEnd, secondStart, secondEnd);
@@ -169,6 +176,13 @@ export function routesConflict(
   let coincidentSegments = 0;
   const firstSegments = clippedRouteSegments(first.samples, sharedPoints, commonEndpointRadius);
   const secondSegments = clippedRouteSegments(second.samples, sharedPoints, commonEndpointRadius);
+  if (labels.length > 0 && commonEndpointRadius > 8) {
+    const tightFirst = clippedRouteSegments(first.samples, sharedPoints, 8);
+    const tightSecond = clippedRouteSegments(second.samples, sharedPoints, 8);
+    for (const [firstStart, firstEnd] of tightFirst) for (const [secondStart, secondEnd] of tightSecond) {
+      if (properIntersection(firstStart, firstEnd, secondStart, secondEnd)) return true;
+    }
+  }
   for (const [firstStart, firstEnd] of firstSegments) {
     for (const [secondStart, secondEnd] of secondSegments) {
       if (boxesFar(firstStart, firstEnd, secondStart, secondEnd, hardClearance)) continue;

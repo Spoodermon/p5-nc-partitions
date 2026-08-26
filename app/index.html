@@ -17,15 +17,16 @@
       </header>
       <section class="toolbar" aria-label="Diagram controls">
         <label class="example-control">Example<select id="example-select"></select></label>
-        <div class="selection-summary" aria-live="polite"><output id="selection-output">No edge selected</output><button id="clear-button" type="button" disabled>Clear</button></div>
         <label class="check-control"><input id="direction-toggle" type="checkbox" />Show direction</label>
         <button id="export-button" class="icon-button" type="button" aria-label="Download SVG" title="Download SVG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4" /></svg></button>
 
         <div id="disc-controls" class="mode-inputs">
           <form id="disc-form" class="notation-form">
+            <label for="disc-n">n<input id="disc-n" class="size-input" type="text" inputmode="numeric" autocomplete="off" /></label>
             <label for="disc-input">Partition</label>
             <input id="disc-input" type="text" spellcheck="false" autocomplete="off" aria-describedby="disc-message" />
             <button type="submit">Render</button>
+            <button id="disc-random-button" class="secondary-button" type="button">Random NC</button>
           </form>
           <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="disc-display-mode" value="partition" checked /> π</label><label><input type="radio" name="disc-display-mode" value="kreweras" /> Kr(π)</label></fieldset>
           <p id="disc-message" class="input-message" aria-live="polite"></p>
@@ -37,6 +38,7 @@
             <label for="annular-q">q<input id="annular-q" type="text" inputmode="numeric" autocomplete="off" aria-describedby="annular-message" /></label>
             <label class="annular-notation" for="annular-input">Permutation<input id="annular-input" type="text" spellcheck="false" autocomplete="off" aria-describedby="annular-message" /></label>
             <button type="submit">Render</button>
+            <button id="annular-random-button" class="secondary-button" type="button">Random ANC</button>
           </form>
           <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="annular-display-mode" value="permutation" checked /> τ</label><label><input type="radio" name="annular-display-mode" value="kreweras" /> Kr(τ)</label></fieldset>
           <p id="annular-message" class="input-message" aria-live="polite"></p>
@@ -49,6 +51,8 @@
           <label>Cycle edges<input id="cycle-edge-thickness" type="range" min="1" max="8" step="0.2" value="3.4" /><output id="cycle-edge-thickness-output" for="cycle-edge-thickness">3.4</output></label>
           <label>Outer boundary<input id="outer-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="outer-boundary-thickness-output" for="outer-boundary-thickness">2.5</output></label>
           <label id="inner-boundary-control" hidden>Inner boundary<input id="inner-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="inner-boundary-thickness-output" for="inner-boundary-thickness">2.5</output></label>
+          <label class="font-control" for="number-font">Number font<select id="number-font"><option value="Newsreader">Newsreader</option><option value="Geist">Geist Sans</option><option value="Geist Mono">Geist Mono</option></select></label>
+          <div class="selection-summary" aria-live="polite"><output id="selection-output">No edge selected</output><button id="clear-button" type="button" disabled>Clear</button></div>
         </aside>
         <div id="figure" class="figure" aria-label="Permutation diagram"></div>
         <aside class="side-panel color-controls" aria-label="Cycle colour controls">

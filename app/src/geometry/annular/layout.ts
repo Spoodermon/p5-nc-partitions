@@ -3,9 +3,10 @@ import type { AnnularBoundary, AnnularLayout, AnnularVertex, Point } from "./typ
 export const ANNULAR_VIEWBOX_SIZE = 1000;
 export const ANNULAR_CENTER = Object.freeze({ x: 500, y: 500 });
 export const ANNULAR_OUTER_RADIUS = 370;
-export const ANNULAR_INNER_RADIUS = 170;
+export const ANNULAR_INNER_RADIUS = 136;
 export const OUTER_LABEL_RADIUS = 414;
-export const INNER_LABEL_RADIUS = 126;
+// Keep inner labels 20% closer to their now-smaller boundary.
+export const INNER_LABEL_RADIUS = 101;
 
 export interface AnnularLayoutOptions {
   readonly innerPhase?: number;

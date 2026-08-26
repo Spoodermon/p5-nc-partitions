@@ -108,6 +108,26 @@ function singletonFirst(bundleSets: readonly (readonly CycleRouteBundle[])[]): r
   });
 }
 
+function reserveSandwichedSingletons(
+  bundleSets: readonly (readonly CycleRouteBundle[])[],
+  p: number,
+  q: number,
+): readonly (readonly CycleRouteBundle[])[] {
+  const throughCycles = bundleSets.flatMap((bundles) => bundles[0]?.corridor.kind === "through" ? [new Set(bundles[0].corridor.cycle)] : []);
+  return bundleSets.map((bundles) => {
+    const edge = bundles[0]?.routes[0]?.edge;
+    if (!edge || edge.role !== "singleton") return bundles;
+    const start = edge.startBoundary === "outer" ? 1 : p + 1;
+    const size = edge.startBoundary === "outer" ? p : q;
+    const offset = edge.startLabel - start;
+    const previous = start + ((offset - 1 + size) % size);
+    const next = start + ((offset + 1) % size);
+    if (!throughCycles.some((cycle) => cycle.has(previous) && cycle.has(next))) return bundles;
+    const spacious = bundles.filter((bundle) => Math.abs(bundle.routes[0]?.excursion ?? 0) >= 0.18);
+    return spacious.length > 0 ? spacious : bundles;
+  });
+}
+
 export function routeAnnularPermutation(value: AnnularPermutation, options: RoutingOptions = {}): RoutedAnnularDiagram {
   const started = performance.now();
   if (!isAnnularNoncrossing(value)) return Object.freeze({ isRoutable: false, permutation: value, reason: "not-annular-noncrossing", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
@@ -138,7 +158,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
         attemptedSeams += 1;
         if (!seamHasPlanarPureSpans(value, seam)) { topologicalRejections += 1; continue; }
         const corridors = createCycleCorridors(value, seam);
-        const bundleSets = corridors.map((corridor) => generateCycleBundles(
+        const generatedBundleSets = corridors.map((corridor) => generateCycleBundles(
           layout,
           seam,
           corridor,
@@ -149,6 +169,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           hard,
           endpointRadius,
         ));
+        const bundleSets = reserveSandwichedSingletons(generatedBundleSets, value.p, value.q);
         searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
         const solution = solveGreedyBundleState(singletonFirst(bundleSets), hard, endpointRadius)
           ?? solveBundleState(bundleSets, hard, endpointRadius, fastNodeLimit);
@@ -191,11 +212,12 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
     for (const seam of [...annularSeamStates(layout)].reverse().slice(0, 6)) {
       if (!seamHasPlanarPureSpans(value, seam)) continue;
       const corridors = createCycleCorridors(value, seam);
-      const bundleSets = corridors.map((corridor) => generateCycleBundles(
+      const generatedBundleSets = corridors.map((corridor) => generateCycleBundles(
         layout, seam, corridor,
         edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex),
         Math.min(sampleCount, 33), "all", Math.min(maximumCandidatesPerEdge * 2, 280), fallbackHard, endpointRadius,
       ));
+      const bundleSets = reserveSandwichedSingletons(generatedBundleSets, value.p, value.q);
       searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
       const solution = solveGreedyBundleState(singletonFirst(bundleSets), fallbackHard, endpointRadius)
         ?? solveBundleState(bundleSets, fallbackHard, endpointRadius, fastNodeLimit);

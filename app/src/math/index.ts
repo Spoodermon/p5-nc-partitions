@@ -5,5 +5,6 @@ export * from "./noncrossing";
 export * from "./parser";
 export * from "./partition";
 export * from "./permutation";
+export * from "./random";
 export * from "./serialize";
 export type * from "./types";

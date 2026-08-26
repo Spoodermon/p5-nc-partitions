@@ -11,6 +11,7 @@ export interface AnnularRenderOptions {
   readonly outerBoundaryWidth: number;
   readonly innerBoundaryWidth: number;
   readonly cycleColors?: readonly string[];
+  readonly numberFont?: string;
 }
 
 export interface AnnularRenderCallbacks {
@@ -104,11 +105,12 @@ export function renderAnnularDiagram(
   routed.layout.vertices.forEach((vertex) => {
     const color = vertex.boundary === "outer" ? "#285f6b" : "#9a552d";
     vertexGroup.circle(15).center(vertex.boundaryPoint.x, vertex.boundaryPoint.y).fill(color).stroke({ color: "white", width: 2 });
-    vertexGroup.plain(String(vertex.label)).font({ family: "Georgia, serif", size: 24, weight: 600 }).fill("#192333").attr({
+    const labelSize = vertex.boundary === "inner" ? 21.6 : 24;
+    vertexGroup.plain(String(vertex.label)).font({ family: options.numberFont ?? "Newsreader, Georgia, serif", size: labelSize, weight: 600 }).fill("#192333").attr({
       x: vertex.labelPoint.x, y: vertex.labelPoint.y, "text-anchor": "middle", "dominant-baseline": "middle",
     });
   });
-  draw.plain(`${model.notation}  ·  (p,q)=(${model.permutation.p},${model.permutation.q})`).font({ family: "Georgia, serif", size: 20 }).fill("#607080").attr({
+  draw.plain(`${model.notation}  ·  (p,q)=(${model.permutation.p},${model.permutation.q})`).font({ family: options.numberFont ?? "Newsreader, Georgia, serif", size: 20 }).fill("#607080").attr({
     x: 500, y: 968, "text-anchor": "middle", "dominant-baseline": "middle",
   });
   return { svg: draw.node, edges: routed.routes.map(({ edge }) => edge) };

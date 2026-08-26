@@ -110,6 +110,15 @@ describe("global annular routing", () => {
     expect(returning?.route.angularDisplacement).toBeGreaterThan(0);
   });
 
+  it("routes a non-contiguous inner-cycle return clockwise", () => {
+    const result = routeAnnularPermutation(parsed("(1 6)(2 3 4 5)(7)(8)(9)(10)(11 13 16)(12)(14)(15)(17)", 10, 7));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    const returning = result.routes.find((route) => route.edge.startLabel === 16 && route.edge.endLabel === 11);
+    expect(returning?.edge.role).toBe("return");
+    expect(returning?.route.angularDisplacement).toBeGreaterThan(0);
+  });
+
   it("builds a positive-area fill region for every routed cycle shape", () => {
     for (const [text, p, q] of [
       ["(1)(2)", 1, 1],
@@ -170,7 +179,7 @@ describe("global annular routing", () => {
       control1: { theta: start, u }, control2: { theta: end, u },
     }));
     const shallow = cubic(0.25);
-    const adequatelySeparated = cubic(0.6);
+    const adequatelySeparated = cubic(0.65);
     const tooClose = cubic(0.27);
     expect(analyzeRoutePair(shallow, adequatelySeparated, 24).clearance).toBeGreaterThan(DEFAULT_HARD_CLEARANCE);
     expect(routesConflict(shallow, tooClose, DEFAULT_HARD_CLEARANCE, 24)).toBe(true);
@@ -245,6 +254,10 @@ describe("global annular routing", () => {
     if (!parsed.ok) throw new Error(parsed.error.kind);
     const routed = routeAnnularPermutation(parsed.value);
     expect(routed.isRoutable).toBe(true);
+    if (!routed.isRoutable) return;
+    const atSeven = routed.routes.filter((route) => route.edge.startLabel === 7 || route.edge.endLabel === 7);
+    expect(atSeven).toHaveLength(2);
+    expect(analyzeRoutePair(atSeven[0]!, atSeven[1]!, 8).intersects).toBe(false);
   });
 
   it("scales singleton breadth to available boundary spacing in the sparse (10,7) fixture", () => {
@@ -253,7 +266,7 @@ describe("global annular routing", () => {
     expect(routed.isRoutable).toBe(true);
     if (!routed.isRoutable) return;
     const singleton = routed.routes.find((route) => route.edge.startLabel === 4 && route.edge.role === "singleton");
-    expect(singleton?.excursion).toBeGreaterThan(0);
+    expect(singleton?.excursion).toBeGreaterThanOrEqual(0.18);
     expect(Math.abs(singleton?.angularBias ?? 0)).toBeGreaterThanOrEqual(0.24);
   }, 10_000);
 

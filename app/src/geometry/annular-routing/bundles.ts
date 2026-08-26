@@ -151,8 +151,16 @@ function pureRoute(
   edgeDeckOffset: number,
 ): AnnularRoute {
   const [start, rawEnd] = normalizedLiftAngles(layout, edge, lifts);
-  let end = rawEnd + edgeDeckOffset * TWO_PI;
-  const effectiveDeckOffset = edgeDeckOffset;
+  const noncontiguousInnerReturn = corridor.kind === "inner-collar"
+    && edge.cycleLength > 2
+    && edge.role === "return"
+    && !followsContiguousBoundaryChain(layout, corridor);
+  // The -1 deck slot doubles as a deliberately lower-ranked compatibility
+  // route for small, crowded annuli where the canonical long return cannot
+  // meet hard clearance. Normal candidates retain the canonical orientation.
+  const useCompatibilityReturn = noncontiguousInnerReturn && edgeDeckOffset === -1;
+  let end = rawEnd + (useCompatibilityReturn ? 0 : edgeDeckOffset * TWO_PI);
+  const effectiveDeckOffset = useCompatibilityReturn ? 0 : edgeDeckOffset;
   if (edge.cycleLength === 2) {
     // A boundary transposition is a narrow oriented ribbon: both directions
     // use one shared angular track in reverse, with radial depth separating
@@ -187,12 +195,18 @@ function pureRoute(
     const positiveMembers = labelsBetween(1).filter((label) => corridor.cycle.includes(label)).length;
     const negativeMembers = labelsBetween(-1).filter((label) => corridor.cycle.includes(label)).length;
     if (positiveMembers !== negativeMembers) end = start + (positiveMembers > negativeMembers ? Math.PI : -Math.PI);
-  } else if (edge.cycleLength > 2 && followsContiguousBoundaryChain(layout, corridor)) {
+  } else if (edge.cycleLength > 2 && (
+    followsContiguousBoundaryChain(layout, corridor)
+    || (noncontiguousInnerReturn && !useCompatibilityReturn)
+  )) {
     // A pure boundary cycle is a ribbon around an open angular chain.  Its
     // first n-1 edges advance in the boundary's native direction; the closing
     // edge retraces that whole chain in reverse on a deeper radial lane.  It
     // must not close across the complementary interval, where an omitted
-    // singleton or another collar may live.
+    // singleton or another collar may live. This orientation rule also
+    // applies to a non-contiguous inner return: the gaps change the length of
+    // the chain, but not the clockwise direction of its closing edge. Other
+    // non-contiguous edges retain their established seam/deck routing.
     const direction = edge.startBoundary === "outer" ? 1 : -1;
     const directedDisplacement = (startLabel: number, endLabel: number): number => {
       const startAngle = layout.vertices[startLabel - 1]?.angle;
@@ -224,14 +238,17 @@ function pureRoute(
   const spanDepth = edge.cycleLength === 2
     ? corridor.kind === "inner-collar"
       ? (edge.edgeIndex === 0 ? 0 : 0.19)
-      : (edge.edgeIndex === 0 ? 0.23 : 0.02)
+      : (edge.edgeIndex === 0 ? 0.23 : spanFraction >= 0.45 ? 0.07 : 0.02)
     : edge.role === "return"
       ? corridor.kind === "outer-collar" && layout.p >= 6
         ? Math.max(0.14, Math.min(0.42, 1.84 * spanFraction ** 3))
         : Math.min(0.42, 1.84 * spanFraction ** 3)
       : Math.min(0.23, 1.84 * spanFraction ** 3);
-  const maximumDepth = edge.cycleLength === 2 || edge.role === "return" ? 0.5 : 0.27;
-  const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth);
+  const innerReturnOutwardBonus = corridor.kind === "inner-collar" && edge.role === "return" && edge.cycleLength > 2
+    ? 0.06 * spanFraction
+    : 0;
+  const maximumDepth = edge.cycleLength === 2 ? 0.5 : edge.role === "return" ? 0.56 : 0.27;
+  const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth + innerReturnOutwardBonus);
   const u = corridor.kind === "outer-collar" ? 1 - depth : depth;
   return createCoverCubicAnnularRoute(layout, {
     startLabel: edge.startLabel,
@@ -283,13 +300,17 @@ function throughRoute(
     const endU = radialVariant === 0
       ? (edge.endBoundary === "outer" ? 0.55 : 0.45)
       : (edge.endBoundary === "outer" ? 0.999 : 0.001);
+    const admittedEndU = edge.role === "return" && edge.endBoundary === "outer" ? Math.min(endU, 0.72) : endU;
+    const admittedEndTheta = edge.role === "return" && edge.endBoundary === "outer"
+      ? end
+      : start + displacement * 0.78 + centralBias * biasScale + endpointFan;
     return createCoverCubicAnnularRoute(layout, {
       startLabel: edge.startLabel,
       endLabel: edge.endLabel,
       startLiftAngle: start,
       endLiftAngle: end,
       control1: { theta: start + displacement * 0.22 + centralBias * biasScale - endpointFan, u: startU },
-      control2: { theta: start + displacement * 0.78 + centralBias * biasScale + endpointFan, u: endU },
+      control2: { theta: admittedEndTheta, u: admittedEndU },
     });
   }
   const spanFraction = Math.min(1, Math.abs(displacement) / TWO_PI);
@@ -297,13 +318,14 @@ function throughRoute(
     ? Math.min(0.27, 0.05 + 1.8 * spanFraction ** 3)
     : radialVariant === 5 ? 0.15 : Math.min(0.48, 0.38 + 0.4 * spanFraction ** 3);
   const centralU = edge.startBoundary === "outer" ? 1 - collarDepth : collarDepth;
+  const direction = Math.sign(displacement) || 1;
   return createCoverCubicAnnularRoute(layout, {
     startLabel: edge.startLabel,
     endLabel: edge.endLabel,
     startLiftAngle: start,
     endLiftAngle: end,
-    control1: { theta: start + centralBias * biasScale - sameBoundaryFan, u: centralU },
-    control2: { theta: end + centralBias * biasScale + sameBoundaryFan, u: centralU },
+    control1: { theta: start + centralBias * biasScale + direction * sameBoundaryFan, u: centralU },
+    control2: { theta: end + centralBias * biasScale - direction * sameBoundaryFan, u: centralU },
   });
 }
 
@@ -355,7 +377,15 @@ function pureBundles(
     const boundarySize = edge.startBoundary === "outer" ? layout.p : layout.q;
     const availableAngularSpace = TWO_PI / boundarySize;
     const preferredBias = Math.min(0.34, Math.max(0.16, availableAngularSpace * 0.45));
-    const excursions = [0.03, 0.05, 0.08, 0.1, 0.14, 0.19, 0.25];
+    const middleRadius = (layout.outerRadius + layout.innerRadius) / 2;
+    const middleU = Math.log(middleRadius / layout.innerRadius) / Math.log(layout.outerRadius / layout.innerRadius);
+    const preferredExcursion = edge.startBoundary === "outer" ? 1 - middleU : middleU;
+    const excursions = [...new Set([
+      preferredExcursion,
+      preferredExcursion * 0.82,
+      preferredExcursion * 0.66,
+      0.14, 0.19, 0.25, 0.1, 0.08, 0.05, 0.03,
+    ].map((value) => Number(value.toFixed(4))))];
     for (const excursion of excursions) for (const angularBias of [0.08, -0.08, 0.12, -0.12, 0.16, -0.16, 0.24, -0.24, 0.34, -0.34]) {
       const route = createAnnularRoute(layout, {
         startLabel: edge.startLabel,
@@ -365,7 +395,7 @@ function pureBundles(
       });
       // Scale loop breadth to the boundary spacing. Dense boundaries retain a
       // compact loop, while sparse sectors use their available angular room.
-      const localScore = Math.abs(excursion - 0.14) + Math.abs(Math.abs(angularBias) - preferredBias) * 0.2;
+      const localScore = Math.abs(excursion - preferredExcursion) + Math.abs(Math.abs(angularBias) - preferredBias) * 0.2;
       const routed = candidate(layout, edge, route, 0, localScore, `singleton:${excursion}:${angularBias}`, sampleCount, "analytical-bump");
       variants.push(Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze([routed]), score: routed.localScore, key: routed.key }));
     }
@@ -390,7 +420,9 @@ function pureBundles(
       const routes = edges.map((edge) => {
         const pairedBias = edge.cycleLength === 2 ? edgeSpacing : (edge.edgeIndex - (edge.cycleLength - 1) / 2) * edgeSpacing;
         const route = pureRoute(layout, edge, lifts, corridor, laneVariant, pairedBias, edgeDeckOffsets[edge.edgeIndex] ?? 0);
-        const preservesChainRibbon = edge.cycleLength === 2 || followsContiguousBoundaryChain(layout, corridor);
+        const preservesChainRibbon = edge.cycleLength === 2
+          || followsContiguousBoundaryChain(layout, corridor)
+          || (corridor.kind === "inner-collar" && edge.role === "return");
         const homotopyPenalty = preservesChainRibbon ? Math.abs(edgeDeckOffsets[edge.edgeIndex] ?? 0) * 2 : 0;
         return candidate(layout, edge, route, laneVariant + (edge.role === "return" ? 1 : 0), laneVariant + Math.abs(pairedBias) + homotopyPenalty, `pure:${laneVariant}:${pairedBias}`, sampleCount, "cover-cubic");
       });

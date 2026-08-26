@@ -141,11 +141,13 @@ export function analyzeRoutePair(
     const tightFirst = clippedRouteSegments(first.samples, sharedPoints, 8);
     const tightSecond = clippedRouteSegments(second.samples, sharedPoints, 8);
     for (const [firstStart, firstEnd] of tightFirst) for (const [secondStart, secondEnd] of tightSecond) {
+      if (boxesFar(firstStart, firstEnd, secondStart, secondEnd, 0)) continue;
       if (properIntersection(firstStart, firstEnd, secondStart, secondEnd)) intersects = true;
     }
   }
   for (const [firstStart, firstEnd] of firstSegments) {
     for (const [secondStart, secondEnd] of secondSegments) {
+      if (Number.isFinite(clearance) && boxesFar(firstStart, firstEnd, secondStart, secondEnd, Math.max(clearance, 0.2))) continue;
       const distance = segmentDistance(firstStart, firstEnd, secondStart, secondEnd);
       clearance = Math.min(clearance, distance);
       if (distance <= EPSILON) intersects = true;

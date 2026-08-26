@@ -82,6 +82,23 @@ export function createAnnularRoute(layout: AnnularLayout, options: AnnularRouteO
   const startLiftAngle = start.angle;
   const endLiftAngle = end.angle + TWO_PI * winding;
   const angularDisplacement = endLiftAngle - startLiftAngle;
+  const logarithmicRadiusRatio = Math.log(layout.outerRadius / layout.innerRadius);
+  const maximumHeightDerivative = kind === "through" ? 1.5 : excursion * 8;
+  const maximumHeightSecondDerivative = kind === "through" ? 6 : excursion * 32;
+  const maximumAngleDerivative = singleton
+    ? Math.abs(angularBias) * TWO_PI
+    : Math.abs(angularDisplacement) + Math.abs(angularBias) * 8;
+  const maximumAngleSecondDerivative = singleton
+    ? Math.abs(angularBias) * TWO_PI * TWO_PI
+    : Math.abs(angularBias) * 32;
+  const maximumRadialDerivativeFactor = logarithmicRadiusRatio * maximumHeightDerivative;
+  const maximumSecondDerivative = layout.outerRadius * (
+    maximumRadialDerivativeFactor * maximumRadialDerivativeFactor
+    + logarithmicRadiusRatio * maximumHeightSecondDerivative
+    + 2 * maximumRadialDerivativeFactor * maximumAngleDerivative
+    + maximumAngleSecondDerivative
+    + maximumAngleDerivative * maximumAngleDerivative
+  );
 
   const angleAt = (t: number): number => {
     if (singleton) return startLiftAngle + angularBias * Math.sin(TWO_PI * t);
@@ -125,6 +142,7 @@ export function createAnnularRoute(layout: AnnularLayout, options: AnnularRouteO
     startLiftAngle,
     endLiftAngle,
     angularDisplacement,
+    maximumSecondDerivative,
     coverPointAt,
     pointAt,
     tangentAt,

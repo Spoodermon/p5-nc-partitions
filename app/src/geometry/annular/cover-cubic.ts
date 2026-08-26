@@ -45,6 +45,14 @@ function cubicDerivative(a: number, b: number, c: number, d: number, t: number):
   return 3 * s * s * (b - a) + 6 * s * t * (c - b) + 3 * t * t * (d - c);
 }
 
+function cubicDerivativeBound(a: number, b: number, c: number, d: number): number {
+  return 3 * Math.max(Math.abs(b - a), Math.abs(c - b), Math.abs(d - c));
+}
+
+function cubicSecondDerivativeBound(a: number, b: number, c: number, d: number): number {
+  return 6 * Math.max(Math.abs(c - 2 * b + a), Math.abs(d - 2 * c + b));
+}
+
 export function createCoverCubicAnnularRoute(
   layout: AnnularLayout,
   options: CoverCubicRouteOptions,
@@ -60,6 +68,19 @@ export function createCoverCubicAnnularRoute(
   const startPoint = Object.freeze({ theta: options.startLiftAngle, u: start.boundary === "outer" ? 1 : 0 });
   const endPoint = Object.freeze({ theta: options.endLiftAngle, u: end.boundary === "outer" ? 1 : 0 });
   const controls = Object.freeze([startPoint, Object.freeze(options.control1), Object.freeze(options.control2), endPoint] as const);
+  const maximumHeightDerivative = cubicDerivativeBound(controls[0].u, controls[1].u, controls[2].u, controls[3].u);
+  const maximumHeightSecondDerivative = cubicSecondDerivativeBound(controls[0].u, controls[1].u, controls[2].u, controls[3].u);
+  const maximumAngleDerivative = cubicDerivativeBound(controls[0].theta, controls[1].theta, controls[2].theta, controls[3].theta);
+  const maximumAngleSecondDerivative = cubicSecondDerivativeBound(controls[0].theta, controls[1].theta, controls[2].theta, controls[3].theta);
+  const logarithmicRadiusRatio = Math.log(layout.outerRadius / layout.innerRadius);
+  const maximumRadialDerivativeFactor = logarithmicRadiusRatio * maximumHeightDerivative;
+  const maximumSecondDerivative = layout.outerRadius * (
+    maximumRadialDerivativeFactor * maximumRadialDerivativeFactor
+    + logarithmicRadiusRatio * maximumHeightSecondDerivative
+    + 2 * maximumRadialDerivativeFactor * maximumAngleDerivative
+    + maximumAngleSecondDerivative
+    + maximumAngleDerivative * maximumAngleDerivative
+  );
   const coverPointAt = (t: number): CoverPoint => {
     requireParameter(t);
     return Object.freeze({
@@ -101,9 +122,9 @@ export function createCoverCubicAnnularRoute(
     startLiftAngle: startPoint.theta,
     endLiftAngle: endPoint.theta,
     angularDisplacement: endPoint.theta - startPoint.theta,
+    maximumSecondDerivative,
     coverPointAt,
     pointAt,
     tangentAt,
   });
 }
-

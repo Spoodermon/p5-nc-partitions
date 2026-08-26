@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { INPUT_LIMITS } from "../src/config/limits";
 import { ROUTING_POLICY } from "../src/config/routingPolicy";
 import { adaptiveRouteSamples, analyzeRouteClearance, routeAnnularPermutation, type RoutedAnnularSuccess } from "../src/geometry/annular-routing";
-import { createAnnularLayout, createAnnularRoute, sampleAnnularRoute } from "../src/geometry/annular";
+import { createAnnularLayout, createAnnularRoute, sampleAnnularRoute, type AnnularRoute } from "../src/geometry/annular";
 import { parseAnnularPermutation, parseDiscPartition, partitionToString } from "../src/math";
 import { processAnnularInput, resolveCanonicalAnnularBlocks } from "../src/production/annularController";
 
@@ -127,10 +127,35 @@ describe("truthful routing contracts", () => {
     { strokeWidth: Number.POSITIVE_INFINITY },
     { visualGap: Number.NaN },
     { strokeWidth: Number.MAX_VALUE, visualGap: Number.MAX_VALUE },
+    { commonEndpointRadius: Number.MAX_VALUE },
+    { hardClearance: ROUTING_POLICY.maximumDistanceOption + 1 },
+    { sampleCount: ROUTING_POLICY.maximumRenderSampleCount + 1 },
   ])("rejects invalid numeric routing options structurally: $0", (options) => {
     const routed = routeAnnularPermutation(annular("(1)(2)", 1, 1), options);
     expect(routed.isRoutable).toBe(false);
     if (!routed.isRoutable) expect(routed.reason).toBe("invalid-routing-options");
+  });
+
+  it("rejects endpoint-radius overflow instead of clipping away hard-clearance truth", () => {
+    const fixture = annular("(1 2)", 1, 1);
+    const baseline = routeAnnularPermutation(fixture, { hardClearance: 100 });
+    expect(baseline.isRoutable).toBe(false);
+    if (!baseline.isRoutable) expect(baseline.reason).toBe("no-route-within-routing-policy");
+    const routed = routeAnnularPermutation(fixture, { hardClearance: 100, commonEndpointRadius: Number.MAX_VALUE });
+    expect(routed.isRoutable).toBe(false);
+    if (!routed.isRoutable) expect(routed.reason).toBe("invalid-routing-options");
+  });
+
+  it("consults a zero-node governor before high-density candidate generation", () => {
+    const routed = routeAnnularPermutation(
+      annular("(1 2 3 4 5 6 7 8 9 10)(11)", 10, 1),
+      { maxSearchNodes: 0, sampleCount: ROUTING_POLICY.maximumRenderSampleCount },
+    );
+    expect(routed.isRoutable).toBe(false);
+    if (!routed.isRoutable) expect(routed.reason).toBe("search-limit-exceeded");
+    expect(routed.diagnostics.searchNodes).toBe(0);
+    expect(routed.diagnostics.searchedCandidateCount).toBe(0);
+    expect(routed.diagnostics.searchedPhaseCount).toBe(0);
   });
 
   it("treats maxSearchNodes as one call-wide cap", () => {
@@ -153,5 +178,30 @@ describe("truthful routing contracts", () => {
       expect(verified.samples.length).toBeGreaterThan(2);
       expect(verified.samples.length - 1).toBeLessThanOrEqual(ROUTING_POLICY.verificationMaxSegmentsPerRoute);
     }
+  });
+
+  it("does not mistake quarter-point agreement for a whole-curve flatness bound", () => {
+    const frequency = 8 * Math.PI;
+    const amplitude = 10;
+    const adversarial = {
+      kind: "through",
+      startLabel: 1,
+      endLabel: 2,
+      startBoundary: "outer",
+      endBoundary: "inner",
+      winding: 0,
+      angularBias: 0,
+      excursion: 0.3,
+      startLiftAngle: 0,
+      endLiftAngle: 0,
+      angularDisplacement: 0,
+      maximumSecondDerivative: amplitude * frequency * frequency,
+      coverPointAt: (t: number) => ({ theta: t, u: t }),
+      pointAt: (t: number) => ({ x: t, y: amplitude * Math.sin(frequency * t) }),
+      tangentAt: (t: number) => ({ x: 1, y: amplitude * frequency * Math.cos(frequency * t) }),
+    } satisfies AnnularRoute;
+    const verified = adaptiveRouteSamples(adversarial);
+    expect(verified.ok).toBe(true);
+    if (verified.ok) expect(verified.samples.length).toBeGreaterThan(8);
   });
 });

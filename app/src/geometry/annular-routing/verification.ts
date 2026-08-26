@@ -13,36 +13,37 @@ export type AdaptiveRouteSamples =
   | { readonly ok: true; readonly samples: readonly Point[] }
   | { readonly ok: false; readonly reason: "geometry-verification-failed" };
 
-function pointSegmentDistance(point: Point, start: Point, end: Point): number {
-  const dx = end.x - start.x; const dy = end.y - start.y;
-  const denominator = dx * dx + dy * dy;
-  if (denominator === 0) return Math.hypot(point.x - start.x, point.y - start.y);
-  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / denominator));
-  return Math.hypot(point.x - start.x - t * dx, point.y - start.y - t * dy);
-}
-
-/** Subdivide pointAt(t) until quarter/midpoint chord error is bounded. */
+/**
+ * Subdivide until the linear-interpolation remainder bound M·Δt²/8 is within
+ * tolerance. `maximumSecondDerivative` is an analytical global bound for the
+ * production route family, so this bounds the complete subcurve rather than
+ * selected probe points.
+ */
 export function adaptiveRouteSamples(route: AnnularRoute, options: VerificationOptions = {}): AdaptiveRouteSamples {
   const tolerance = options.tolerance ?? ROUTING_POLICY.verificationTolerance;
   const maximumDepth = options.maximumDepth ?? ROUTING_POLICY.verificationMaxDepth;
   const maximumSegments = options.maximumSegmentsPerRoute ?? ROUTING_POLICY.verificationMaxSegmentsPerRoute;
+  if (!Number.isFinite(tolerance) || tolerance <= 0
+    || !Number.isInteger(maximumDepth) || maximumDepth < 0
+    || !Number.isInteger(maximumSegments) || maximumSegments < 1
+    || !Number.isFinite(route.maximumSecondDerivative) || route.maximumSecondDerivative < 0) {
+    return Object.freeze({ ok: false, reason: "geometry-verification-failed" as const });
+  }
   const points: Point[] = [route.pointAt(0)];
   let segments = 0;
   let failed = false;
   const visit = (t0: number, start: Point, t1: number, end: Point, depth: number): void => {
     if (failed) return;
     const delta = t1 - t0;
-    const q1 = route.pointAt(t0 + delta * 0.25);
-    const mid = route.pointAt(t0 + delta * 0.5);
-    const q3 = route.pointAt(t0 + delta * 0.75);
-    const flatness = Math.max(pointSegmentDistance(q1, start, end), pointSegmentDistance(mid, start, end), pointSegmentDistance(q3, start, end));
-    if (flatness <= tolerance) {
+    const interpolationErrorBound = route.maximumSecondDerivative * delta * delta / 8;
+    if (interpolationErrorBound <= tolerance) {
       segments += 1;
       if (segments > maximumSegments) { failed = true; return; }
       points.push(end);
       return;
     }
     if (depth >= maximumDepth) { failed = true; return; }
+    const mid = route.pointAt(t0 + delta * 0.5);
     visit(t0, start, t0 + delta * 0.5, mid, depth + 1);
     visit(t0 + delta * 0.5, mid, t1, end, depth + 1);
   };

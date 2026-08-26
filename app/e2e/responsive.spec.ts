@@ -23,8 +23,8 @@ test("annular controls remain distinct, contained, and stateful at every audited
         form: { left: formRect.left, right: formRect.right },
         random: bounds("#annular-random-button"),
         render: bounds('button[type="submit"]'),
-        p: bounds('label[for="annular-p"]'),
-        q: bounds('label[for="annular-q"]'),
+        p: bounds("#annular-p"),
+        q: bounds("#annular-q"),
         viewportWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
       };

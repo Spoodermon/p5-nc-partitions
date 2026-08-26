@@ -60,6 +60,8 @@ export interface AnnularRoute {
   readonly startLiftAngle: number;
   readonly endLiftAngle: number;
   readonly angularDisplacement: number;
+  /** Global bound on |d²(pointAt(t))/dt²| for t in [0,1]. */
+  readonly maximumSecondDerivative: number;
   readonly coverPointAt: (t: number) => CoverPoint;
   readonly pointAt: (t: number) => Point;
   readonly tangentAt: (t: number) => Vector;

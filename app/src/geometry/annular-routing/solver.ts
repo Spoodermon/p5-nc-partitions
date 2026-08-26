@@ -149,18 +149,19 @@ function reserveSandwichedSingletons(
 }
 
 function routingOptionsAreValid(options: RoutingOptions): boolean {
-  const finiteNonnegative = (value: number | undefined): boolean => value === undefined || (Number.isFinite(value) && value >= 0);
+  const boundedDistance = (value: number | undefined, maximum: number = ROUTING_POLICY.maximumDistanceOption): boolean =>
+    value === undefined || (Number.isFinite(value) && value >= 0 && value <= maximum);
   const boundedInteger = (value: number | undefined, minimum: number, maximum: number): boolean =>
     value === undefined || (Number.isInteger(value) && value >= minimum && value <= maximum);
   return boundedInteger(options.phaseCandidateCount, 2, 65)
-    && boundedInteger(options.sampleCount, 2, 4_097)
+    && boundedInteger(options.sampleCount, 2, ROUTING_POLICY.maximumRenderSampleCount)
     && boundedInteger(options.maxCandidatesPerEdge, 1, 10_000)
     && boundedInteger(options.maxSearchNodes, 0, 1_000_000)
-    && finiteNonnegative(options.hardClearance)
-    && finiteNonnegative(options.commonEndpointRadius)
-    && finiteNonnegative(options.strokeWidth)
-    && finiteNonnegative(options.visualGap)
-    && finiteNonnegative(options.preferredClearance);
+    && boundedDistance(options.hardClearance)
+    && boundedDistance(options.commonEndpointRadius, ROUTING_POLICY.maximumCommonEndpointRadius)
+    && boundedDistance(options.strokeWidth)
+    && boundedDistance(options.visualGap)
+    && boundedDistance(options.preferredClearance);
 }
 
 function throughRouteDiagnostics(routes: readonly AnnularRouteCandidate[]): readonly ThroughRouteDiagnostic[] {
@@ -186,6 +187,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
   if (!routingOptionsAreValid(options)) return Object.freeze({ isRoutable: false, permutation: value, reason: "invalid-routing-options", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
   const phaseCount = options.phaseCandidateCount ?? ROUTING_POLICY.phaseCandidateCount;
   const sampleCount = options.sampleCount ?? ROUTING_POLICY.renderSampleCount;
+  const heuristicSampleCount = Math.min(sampleCount, ROUTING_POLICY.renderSampleCount);
   const maximumCandidatesPerEdge = options.maxCandidatesPerEdge ?? ROUTING_POLICY.maxCandidatesPerEdge;
   const maximumNodes = Math.max(0, Math.floor(options.maxSearchNodes ?? ROUTING_POLICY.maxSearchNodes));
   const hard = options.hardClearance ?? (options.strokeWidth ?? DEFAULT_ROUTE_STROKE_WIDTH) + (options.visualGap ?? DEFAULT_VISUAL_GAP);
@@ -193,10 +195,13 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
   const endpointRadius = options.commonEndpointRadius ?? DEFAULT_COMMON_ENDPOINT_RADIUS;
   const clearanceMargin = verificationClearanceMargin();
   const searchHard = hard + clearanceMargin;
-  if (![hard, preferred, endpointRadius, searchHard].every(Number.isFinite)) return Object.freeze({ isRoutable: false, permutation: value, reason: "invalid-routing-options", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
+  if (![hard, preferred, endpointRadius, searchHard].every(Number.isFinite)
+    || hard > ROUTING_POLICY.maximumDistanceOption
+    || preferred > ROUTING_POLICY.maximumDistanceOption
+    || endpointRadius > ROUTING_POLICY.maximumCommonEndpointRadius) {
+    return Object.freeze({ isRoutable: false, permutation: value, reason: "invalid-routing-options", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
+  }
   const budget: SearchBudget = { limit: maximumNodes, consumed: 0, exhausted: maximumNodes === 0 };
-  const edges = extractAnnularEdges(value);
-  const phases = annularPhaseCandidates(value.p, value.q, phaseCount);
   let searchedCandidates = 0; let topologicalRejections = 0; let verificationRejected = false;
   let lastVerificationFailure: ReturnType<typeof verifyRouteSet> | null = null;
   const diagnosticContract = Object.freeze({
@@ -213,6 +218,9 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
     reason,
     diagnostics: Object.freeze({ ...EMPTY_METRICS, ...(lastVerificationFailure && !lastVerificationFailure.ok ? lastVerificationFailure.analysis : {}), ...diagnosticContract, searchedPhaseCount, searchedCandidateCount: searchedCandidates, searchNodes: budget.consumed, topologicalRejections, principalSearchProof: proof, elapsedMilliseconds: performance.now() - started }),
   });
+  if (budget.exhausted) return fail("search-limit-exceeded", 0, "not-proven");
+  const edges = extractAnnularEdges(value);
+  const phases = annularPhaseCandidates(value.p, value.q, phaseCount);
   // Large admitted diagrams need a deliberately narrow production path before
   // the exhaustive seam search. The principal bundles already encode the
   // coherent cover lifts; a small deterministic backtrack finds the natural
@@ -234,7 +242,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           seam,
           corridor,
           edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex),
-          Math.min(Math.max(sampleCount, 17), 33),
+          Math.min(Math.max(heuristicSampleCount, 17), 33),
           "principal-only",
           maximumCandidatesPerEdge,
           searchHard,
@@ -292,7 +300,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
       const generatedBundleSets = corridors.map((corridor) => generateCycleBundles(
         layout, seam, corridor,
         edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex),
-        Math.min(Math.max(sampleCount, 17), 33), "all", Math.min(maximumCandidatesPerEdge * 2, 280), searchHard, endpointRadius,
+        Math.min(Math.max(heuristicSampleCount, 17), 33), "all", Math.min(maximumCandidatesPerEdge * 2, 280), searchHard, endpointRadius,
       ));
       const bundleSets = reserveSandwichedSingletons(generatedBundleSets, value.p, value.q);
       searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
@@ -330,7 +338,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           const bundleSets = corridors.map((corridor) => {
             const policy = corridor.kind !== "through" || allowNonPrincipalThrough ? "all" : "principal-only";
             const candidateLimit = allowNonPrincipalThrough ? Math.min(maximumCandidatesPerEdge * 2, 280) : maximumCandidatesPerEdge;
-            return generateCycleBundles(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), Math.max(sampleCount, 17), policy, candidateLimit, searchHard, endpointRadius);
+            return generateCycleBundles(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), Math.max(heuristicSampleCount, 17), policy, candidateLimit, searchHard, endpointRadius);
           });
           searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
           const solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget);

@@ -25,7 +25,7 @@ describe("NCV-7 representative performance diagnostics", () => {
     if (!disc.ok) throw new Error(disc.error.kind);
     const discTiming = measure("disc-n400-two-block", () => isNoncrossing(disc.value));
     expect(discTiming.value).toBe(true);
-    expect(discTiming.milliseconds).toBeLessThan(750);
+    expect(discTiming.milliseconds).toBeLessThan(150);
 
     const ordinary = measure("ordinary-annular", () => routeAnnularPermutation(parsed("(1 4)(2)(3)(5)", 3, 2)));
     const mingo = measure("mingo-nica", () => routeAnnularPermutation(parsed("(1 8)(2)(3 4 7)(5 6)", 5, 3)));

@@ -70,7 +70,7 @@ connected:     #(τ) + #(K_{p,q}(τ)) = p + q
 disconnected:  #(τ) + #(K_{p,q}(τ)) = p + q + 2
 ```
 
-The inner mathematical cycle remains `(p+1 … p+q)`. A future renderer may place inner labels in the opposite screen-angular orientation, but that layout choice must not reverse the mathematical permutation.
+The inner mathematical cycle remains `(p+1 … p+q)`. The production renderer places inner labels in the opposite screen-angular orientation without reversing the mathematical permutation.
 
 Production annular input uses separate positive-integer `p` and `q` fields plus oriented cycle notation. Syntax/domain errors, mathematically crossing permutations, and bounded-router failures are reported distinctly without replacing the last valid figure.
 
@@ -120,7 +120,7 @@ The complete-permutation routing laboratory is available at:
 
 The production router first rejects input that is not mathematically annular-noncrossing. It extracts every directed cycle edge, searches 9 deterministic phase candidates, builds bounded candidate sets, and assigns them with deterministic backtracking. Same-boundary candidates use explicit excursion lanes; return edges prefer deeper lanes. Through candidates use bounded angular-bias families, and opposite directed edges in a two-cycle receive paired biases.
 
-Candidate heuristics use 65 samples by default, but public sampling density never controls final admission. Every successful plan is independently resampled by adaptive subdivision of `pointAt(t)` to a 0.12 viewBox-unit flatness tolerance (maximum depth 12 and 4,096 segments per route), then checked for intersection, sustained overlap, and clearance. Admission reserves twice the flatness tolerance (0.24 units) for pairwise approximation error and reports clearance after subtracting that margin. A radius-24 neighbourhood is ignored only around a shared mathematical endpoint. The default hard clearance is 7.5 viewBox units; requested hard clearance is never weakened. Label proximity is a soft warning.
+Candidate heuristics use at most 65 samples; the accepted public render-sample range is 2–257, and public sampling density never controls final admission. Every successful plan is independently resampled by adaptive subdivision of `pointAt(t)` using the analytical route family's global second-derivative bound and the interpolation remainder `M·Δt²/8`. This proves a 0.12 viewBox-unit whole-subcurve error bound, subject to maximum depth 12 and 4,096 segments per route. Admission reserves twice that tolerance (0.24 units) for pairwise approximation error and reports clearance after subtracting the margin. A radius-24 neighbourhood is ignored only around a shared mathematical endpoint. Continuous routing distances are bounded to 1,000 viewBox units, with common-endpoint radius capped at 100. The default hard clearance is 7.5 viewBox units; requested hard clearance is never weakened. Label proximity is a soft warning.
 
 Search is bounded to 140 candidates per edge and 5,000 nodes for the entire routing call by default. Every phase, seam, principal/fallback pass, greedy attempt, and backtracking state shares that budget. Exhaustion returns `search-limit-exceeded`; policy exhaustion, invalid programmatic options, and verification failure have distinct reasons. The router reports `feasible` when its selected through routes are principal and otherwise conservatively reports `not-proven`; it does not claim that the principal class is infeasible. Route-plan serialization and tie-breaking are deterministic.
 

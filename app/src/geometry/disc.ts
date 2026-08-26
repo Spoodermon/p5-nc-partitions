@@ -163,6 +163,10 @@ function cyclicSeparation(start: number, end: number, vertexCount: number): numb
 export function arcDepth(edge: DirectedEdge, vertexCount: number): number {
   if (edge.role === "singleton") return 54;
   const separation = cyclicSeparation(edge.start, edge.end, vertexCount);
+  // Antipodal transpositions form a balanced two-sided lens. Their directed
+  // edges already bend to opposite sides of the diameter, so a shared depth
+  // gives the ribbon reflection symmetry instead of an oversized return side.
+  if (edge.cycle.length === 2 && separation * 2 === vertexCount) return 142;
   const laneOffset = edge.lane * 32;
   if (edge.role === "return") {
     return 170 + separation * 28 + laneOffset;

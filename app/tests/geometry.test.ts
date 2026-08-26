@@ -17,14 +17,17 @@ describe("curved edge grammar", () => {
     const layout = createDiscLayout(example);
     expect(layout.edges).toHaveLength(2);
 
-    const paths = layout.edges.map((edge) => {
+    const geometries = layout.edges.map((edge) => {
       const start = layout.vertices[edge.start - 1];
       const end = layout.vertices[edge.end - 1];
       if (!start || !end) throw new Error("Missing test vertex");
-      return makeDiscArc(start, end, edge, example.vertexCount).path;
+      return makeDiscArc(start, end, edge, example.vertexCount);
     });
 
-    expect(paths[0]).not.toBe(paths[1]);
+    expect(geometries[0]?.path).not.toBe(geometries[1]?.path);
+    expect(geometries[0]?.depth).toBe(geometries[1]?.depth);
+    expect(geometries[0]?.control1.x).toBeCloseTo(1000 - (geometries[1]?.control2.x ?? 0), 10);
+    expect(geometries[0]?.control2.x).toBeCloseTo(1000 - (geometries[1]?.control1.x ?? 0), 10);
   });
 
   it("classifies exactly one deeper return edge for the three-cycle", () => {

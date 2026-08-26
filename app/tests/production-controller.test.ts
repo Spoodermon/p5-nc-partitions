@@ -37,6 +37,11 @@ describe("production mathematical mode controller", () => {
     expect(router).toHaveBeenCalledOnce();
     expect(!failed.ok && failed.error.kind).toBe("router-failure");
     expect(!failed.ok && failed.error.message).toContain("mathematically annular-noncrossing");
+    expect(!failed.ok && failed.error.message).toContain("search budget was exhausted");
+
+    const thrown = processAnnularInput("1", "1", "(1 2)", () => { throw new Error("boom"); });
+    expect(!thrown.ok && thrown.error.kind).toBe("router-failure");
+    expect(!thrown.ok && thrown.error.message).toContain("unexpected failure");
   });
 
   it("routes only when mathematical input is accepted and remains deterministic", () => {

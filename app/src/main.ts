@@ -126,6 +126,12 @@ function acceptAnnularInput(p: string, q: string, input: string): boolean {
   selectedEdge = null; updateSelection(null); redraw(); return true;
 }
 
+function queueAnnularInput(p: string, q: string, input: string): void {
+  annularMessage.dataset.state = "pending";
+  annularMessage.textContent = "Routing…";
+  window.setTimeout(() => acceptAnnularInput(p, q, input), 0);
+}
+
 function populateExamples(): void {
   exampleSelect.replaceChildren();
   const examples: readonly { id: string; label: string }[] = state.mode === "disc" ? EXAMPLES : ANNULAR_EXAMPLES;
@@ -141,10 +147,10 @@ function showSurface(mode: SurfaceMode): void {
 
 exampleSelect.addEventListener("change", () => {
   if (state.mode === "disc") { const example = getExample(exampleSelect.value); discInput.value = example.notation; acceptDiscInput(example.notation); }
-  else { const example = getAnnularExample(exampleSelect.value); annularP.value = String(example.p); annularQ.value = String(example.q); annularInput.value = example.notation; acceptAnnularInput(String(example.p), String(example.q), example.notation); }
+  else { const example = getAnnularExample(exampleSelect.value); annularP.value = String(example.p); annularQ.value = String(example.q); annularInput.value = example.notation; queueAnnularInput(String(example.p), String(example.q), example.notation); }
 });
 discForm.addEventListener("submit", (event) => { event.preventDefault(); acceptDiscInput(discInput.value); });
-annularForm.addEventListener("submit", (event) => { event.preventDefault(); acceptAnnularInput(annularP.value, annularQ.value, annularInput.value); });
+annularForm.addEventListener("submit", (event) => { event.preventDefault(); queueAnnularInput(annularP.value, annularQ.value, annularInput.value); });
 surfaceControls.forEach((control) => control.addEventListener("change", () => { if (control.checked) showSurface(control.value as SurfaceMode); }));
 discDisplayControls.forEach((control) => control.addEventListener("change", () => { if (control.checked) { discDisplayMode = control.value as DiscDisplayMode; selectedEdge = null; updateSelection(null); redraw(); } }));
 directionToggle.addEventListener("change", redraw);

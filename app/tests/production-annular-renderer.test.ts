@@ -57,6 +57,7 @@ describe("production annular SVG renderer", () => {
       ["(1 8)(2)(3 4 7)(5 6)", 5, 3, false],
       ["(1)(2 3)(4 5 6 7)", 4, 3, true],
       ["(1)(2)", 1, 1, true],
+      ["(1 11)(2 3 16)(4 5 6)(7 13)(8)(9 12)(10)(14 15)(17)", 10, 7, true],
     ] as const) {
       const svg = render(text, p, q, { showDirection: true, showRibbonFill: fill, cycleEdgeWidth: 4.6, outerBoundaryWidth: 3, innerBoundaryWidth: 2 });
       const serialized = serializeFigure(svg);

@@ -79,13 +79,26 @@ export function processAnnularInput(
     };
   }
 
-  const routed = router(parsed.value);
+  let routed: RoutedAnnularDiagram;
+  try {
+    routed = router(parsed.value);
+  } catch {
+    return {
+      ok: false,
+      error: {
+        kind: "router-failure",
+        message: "The permutation is mathematically annular-noncrossing, but the router encountered an unexpected failure.",
+      },
+    };
+  }
   if (!routed.isRoutable) {
     return {
       ok: false,
       error: {
         kind: "router-failure",
-        message: "The permutation is mathematically annular-noncrossing, but the current bounded router could not produce an admitted route.",
+        message: routed.reason === "search-limit-exceeded"
+          ? "The permutation is mathematically annular-noncrossing, but the production routing search budget was exhausted."
+          : "The permutation is mathematically annular-noncrossing, but the current bounded router could not produce an admitted route.",
       },
     };
   }

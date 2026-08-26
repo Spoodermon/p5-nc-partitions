@@ -168,6 +168,25 @@ function pureRoute(
     if (Math.abs(sharedDisplacement + Math.PI) < 1e-12 && rawDisplacement > 0) sharedDisplacement = Math.PI;
     sharedDisplacement += edgeDeckOffset * TWO_PI;
     end = start + (edge.edgeIndex === 0 ? sharedDisplacement : -sharedDisplacement);
+  } else if (corridor.kind === "outer-collar" && edge.cycleLength > 2 && Math.abs(Math.abs(end - start) - Math.PI) < 1e-10) {
+    // At an antipodal tie, use the half-boundary containing more vertices of
+    // this cycle. This keeps omitted labels outside the collar region; e.g.
+    // (1 3 4) on an outer four-boundary sends 1->3 past 4, not past singleton 2.
+    const boundaryStart = edge.startBoundary === "outer" ? 1 : layout.p + 1;
+    const boundarySize = edge.startBoundary === "outer" ? layout.p : layout.q;
+    const labelsBetween = (direction: 1 | -1): readonly number[] => {
+      const result: number[] = [];
+      let index = edge.startLabel - boundaryStart;
+      const target = edge.endLabel - boundaryStart;
+      while (true) {
+        index = (index + direction + boundarySize) % boundarySize;
+        if (index === target) return result;
+        result.push(boundaryStart + index);
+      }
+    };
+    const positiveMembers = labelsBetween(1).filter((label) => corridor.cycle.includes(label)).length;
+    const negativeMembers = labelsBetween(-1).filter((label) => corridor.cycle.includes(label)).length;
+    if (positiveMembers !== negativeMembers) end = start + (positiveMembers > negativeMembers ? Math.PI : -Math.PI);
   } else if (edge.cycleLength > 2 && followsContiguousBoundaryChain(layout, corridor)) {
     // A pure boundary cycle is a ribbon around an open angular chain.  Its
     // first n-1 edges advance in the boundary's native direction; the closing
@@ -207,7 +226,9 @@ function pureRoute(
       ? (edge.edgeIndex === 0 ? 0 : 0.19)
       : (edge.edgeIndex === 0 ? 0.23 : 0.02)
     : edge.role === "return"
-      ? Math.min(0.42, 1.84 * spanFraction ** 3)
+      ? corridor.kind === "outer-collar" && layout.p >= 6
+        ? Math.max(0.14, Math.min(0.42, 1.84 * spanFraction ** 3))
+        : Math.min(0.42, 1.84 * spanFraction ** 3)
       : Math.min(0.23, 1.84 * spanFraction ** 3);
   const maximumDepth = edge.cycleLength === 2 || edge.role === "return" ? 0.5 : 0.27;
   const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth);

@@ -212,6 +212,34 @@ describe("global annular routing", () => {
     expect(valid).toBe(22);
   }, 30_000);
 
+  it("routes the supplied production (10,7) fixture within the large-diagram fast path", () => {
+    const result = routeAnnularPermutation(parsed("(1 11)(2 3 16)(4 5 6)(7 13)(8)(9 12)(10)(14 15)(17)", 10, 7));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    expect(result.routes).toHaveLength(17);
+    expect(result.diagnostics.hardCollisionCount).toBe(0);
+    expect(result.diagnostics.minimumClearance).toBeGreaterThanOrEqual(DEFAULT_HARD_CLEARANCE);
+    expect(result.diagnostics.elapsedMilliseconds).toBeLessThan(2_000);
+  }, 5_000);
+
+  it("routes the formerly freezing valid (10,7) production fixture", () => {
+    const result = routeAnnularPermutation(parsed("(1 3)(2)(4 6 15 16 17)(5)(7)(8 9 10)(11 12)(13 14)", 10, 7));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    expect(result.routes).toHaveLength(17);
+    expect(result.diagnostics.hardCollisionCount).toBe(0);
+    expect(result.diagnostics.elapsedMilliseconds).toBeLessThan(2_000);
+  }, 5_000);
+
+  it("keeps the antipodal edge of (1 3 4) on the cycle-populated side", () => {
+    const result = routeAnnularPermutation(parsed("(1 3 4)(2)(5)(6)", 4, 2));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    const edge = result.routes.find((route) => route.edge.startLabel === 1 && route.edge.endLabel === 3);
+    expect(edge).toBeDefined();
+    expect(edge?.route.angularDisplacement).toBeLessThan(0);
+  });
+
   it("is deterministic and gives opposite directed two-cycle edges distinct routes", () => {
     const fixture = parsed("(1 3)(2)(4)", 2, 2);
     const first = routeAnnularPermutation(fixture, { phaseCandidateCount: 5 });

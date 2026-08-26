@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INPUT_LIMITS } from "../src/config/limits";
 import { ROUTING_POLICY } from "../src/config/routingPolicy";
-import { adaptiveRouteSamples, analyzeRouteClearance, analyzeRoutePair, annularSeamStates, createCycleCorridors, extractAnnularEdges, generateCycleBundles, generateRouteCandidates, routeAnnularPermutation, type AnnularRouteCandidate, type RoutedAnnularSuccess } from "../src/geometry/annular-routing";
+import { adaptiveRouteSamples, analyzeRouteClearance, analyzeRoutePair, annularSeamStates, createCandidateGenerationBudget, createCycleCorridors, extractAnnularEdges, generateCycleBundles, generateRouteCandidates, routeAnnularPermutation, type AnnularRouteCandidate, type RoutedAnnularSuccess } from "../src/geometry/annular-routing";
 import { createAnnularLayout, createAnnularRoute, sampleAnnularRoute, type AnnularRoute } from "../src/geometry/annular";
 import { parseAnnularPermutation, parseDiscPartition, partitionToString } from "../src/math";
 import { processAnnularInput, resolveCanonicalAnnularBlocks } from "../src/production/annularController";
@@ -110,7 +110,7 @@ describe("truthful routing contracts", () => {
   });
 
   it("derives principal proof state from the selected route class", () => {
-    const routed = routeAnnularPermutation(annular("(1 2 5 4)(3)", 2, 3));
+    const routed = routeAnnularPermutation(annular("(1 2)(3 4 5)", 1, 4));
     expect(routed.isRoutable, routed.isRoutable ? "success" : routed.reason).toBe(true);
     if (!routed.isRoutable) return;
     expect(routed.diagnostics.throughRoutes?.every((route) => route.selectedWinding === route.principalWinding)).toBe(true);
@@ -170,7 +170,41 @@ describe("truthful routing contracts", () => {
     expect(routed.isRoutable).toBe(false);
     if (!routed.isRoutable) expect(routed.reason).toBe("search-limit-exceeded");
     expect(routed.diagnostics.searchedCandidateCount).toBeLessThanOrEqual(11);
+    expect(routed.diagnostics.materializedSamplePointCount).toBeLessThanOrEqual(11 * ROUTING_POLICY.maximumRenderSampleCount);
+    expect(routed.diagnostics.bundleValidationChecks).toBeLessThanOrEqual(46);
     expect(rssGrowth).toBeLessThan(32 * 1024 * 1024);
+  });
+
+  it("caps actual route objects rather than multiplying bundles by cycle edges", () => {
+    const notation = `(${Array.from({ length: 20 }, (_, index) => index + 1).join(" ")})(21)`;
+    const value = annular(notation, 20, 1);
+    const layout = createAnnularLayout(20, 1);
+    const seam = [...annularSeamStates(layout)][0]!;
+    const edges = extractAnnularEdges(value);
+    const corridor = createCycleCorridors(value, seam).find((candidate) => candidate.cycle.length === 20)!;
+    const corridorEdges = edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex);
+    const budget = createCandidateGenerationBudget();
+    const bundles = generateCycleBundles(layout, seam, corridor, corridorEdges, 65, "all", ROUTING_POLICY.maxCandidatesPerEdge, ROUTING_POLICY.hardClearance, ROUTING_POLICY.commonEndpointRadius, budget);
+    const actualRoutes = bundles.reduce((sum, bundle) => sum + bundle.routes.length, 0);
+    expect(bundles.length).toBeLessThanOrEqual(ROUTING_POLICY.maxCandidatesPerEdge);
+    expect(actualRoutes).toBeLessThanOrEqual(20 * ROUTING_POLICY.maxCandidatesPerEdge);
+    expect(budget.materializedRoutes).toBe(actualRoutes);
+    expect(budget.materializedPoints).toBe(actualRoutes * 65);
+  });
+
+  it("bounds rejected through specifications before route materialization", () => {
+    const value = annular("(1 2)", 1, 1);
+    const layout = createAnnularLayout(1, 1);
+    const seam = [...annularSeamStates(layout)][0]!;
+    const corridor = createCycleCorridors(value, seam)[0]!;
+    const edges = extractAnnularEdges(value);
+    const budget = createCandidateGenerationBudget();
+    const bundles = generateCycleBundles(layout, seam, corridor, edges, 65, "all", 1, 1_000, 24, budget);
+    expect(bundles).toHaveLength(0);
+    expect(budget.attemptedBundles).toBeGreaterThan(0);
+    expect(budget.attemptedBundles).toBeLessThanOrEqual(4);
+    expect(budget.rejectedBundles).toBe(budget.attemptedBundles);
+    expect(budget.materializedRoutes).toBe(2 * budget.attemptedBundles);
   });
 
   it("bounds every exported sampling and candidate helper", () => {
@@ -201,6 +235,18 @@ describe("truthful routing contracts", () => {
     expect(analyzeRoutePair(first, second, 8).clearance).toBe(Number.POSITIVE_INFINITY);
     expect(analyzeRoutePair(first, second, 8, ROUTING_POLICY.verificationTolerance).clearance).toBeLessThanOrEqual(0.1 + 1e-9);
     expect(analyzeRoutePair(first, second, 24, ROUTING_POLICY.verificationTolerance).intersects).toBe(true);
+  });
+
+  it("detects collinear contact outside the tight endpoint disk at zero tolerance", () => {
+    const layout = createAnnularLayout(2, 1);
+    const firstEdge = extractAnnularEdges(annular("(1 2)(3)", 2, 1))[0]!;
+    const secondEdge = extractAnnularEdges(annular("(1 3)(2)", 2, 1))[0]!;
+    const route = createAnnularRoute(layout, { startLabel: 1, endLabel: 2 });
+    const make = (edge: typeof firstEdge): AnnularRouteCandidate => ({
+      edge, winding: 0, lane: 0, excursion: route.excursion, angularBias: 0, route,
+      samples: Object.freeze([{ x: 0, y: 0 }, { x: 30, y: 0 }]), localScore: 0, key: edge.id,
+    });
+    expect(analyzeRoutePair(make(firstEdge), make(secondEdge), 24, 0).intersects).toBe(true);
   });
 
   it("treats maxSearchNodes as one call-wide cap", () => {

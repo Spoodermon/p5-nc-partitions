@@ -52,7 +52,11 @@ export interface RoutingMetrics {
   readonly labelWarnings: readonly string[];
   readonly searchedPhaseCount: number;
   readonly searchedCandidateCount: number;
+  readonly attemptedBundleCount?: number;
+  readonly rejectedBundleCount?: number;
+  readonly materializedSamplePointCount?: number;
   readonly searchNodes: number;
+  readonly bundleValidationChecks?: number;
   readonly elapsedMilliseconds: number;
   readonly phaseScore: number;
   readonly routeScore: number;
@@ -62,6 +66,9 @@ export interface RoutingMetrics {
   readonly throughRoutes?: readonly ThroughRouteDiagnostic[];
   readonly requestedHardClearance?: number;
   readonly maxSearchNodes?: number;
+  readonly maxMaterializedRouteCandidates?: number;
+  readonly maxMaterializedSamplePoints?: number;
+  readonly maxBundleValidationChecks?: number;
   readonly principalSearchProof?: "feasible" | "proven-infeasible" | "not-proven";
   readonly verificationTolerance?: number;
   readonly verificationClearanceMargin?: number;

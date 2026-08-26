@@ -161,14 +161,13 @@ describe("global annular routing", () => {
     }
   }, 30_000);
 
-  it("routes and fills the length three and four boundary/through lab matrix", () => {
+  it("routes the clearance-valid boundary/through lab matrix", () => {
     for (const [text, p, q] of [
       ["(1 2 3)(4)(5)(6)(7)", 4, 3],
       ["(1 2 3 4)(5)(6)(7)(8)", 5, 3],
       ["(1)(2)(3)(4 5 6)(7)", 3, 4],
       ["(1)(2)(3)(4 5 6 7)(8)", 3, 5],
       ["(1 4 5)(2)(3)(6)", 3, 3],
-      ["(1 4 5 6)(2)(3)", 3, 3],
     ] as const) {
       const result = routeAnnularPermutation(parsed(text, p, q));
       expect(result.isRoutable, `${text}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
@@ -177,6 +176,10 @@ describe("global annular routing", () => {
       expect(regions).toHaveLength(result.corridors.length);
       expect(regions.every((region) => region.area > 1)).toBe(true);
     }
+    // This legacy fixture makes the first and returning through edges touch
+    // in the 8-to-24 endpoint annulus. Exact zero-tolerance contact is no
+    // longer hidden by discarding microscopic clipped intervals.
+    expect(routeAnnularPermutation(parsed("(1 4 5 6)(2)(3)", 3, 3)).isRoutable).toBe(false);
   }, 30_000);
 
   it("detects intersections and orders segment clearances", () => {

@@ -3,9 +3,7 @@ import { routeAnnularPermutation } from "../src/geometry/annular-routing";
 import { annularPermutationFromImages, isAnnularNoncrossing } from "../src/math";
 import { permutationImages } from "./helpers/permutations";
 
-const EXPECTED_BOUNDED_REJECTIONS = new Map<string, readonly string[]>([
-  ["1,4", ["3,2,5,4,1: search-limit-exceeded"]],
-]);
+const EXPECTED_BOUNDED_REJECTIONS = new Map<string, readonly string[]>();
 
 describe("release exhaustive annular routing", () => {
   it("strictly verifies every valid permutation routing outcome through total support five", () => {

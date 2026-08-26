@@ -1,8 +1,6 @@
 import type { Point } from "../annular";
 import type { AnnularRouteCandidate, RoutePairDiagnostic } from "./types";
 
-const EPSILON = 1e-7;
-
 function cross(a: Point, b: Point, c: Point): number {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
@@ -15,7 +13,7 @@ function pointSegmentDistance(point: Point, start: Point, end: Point): number {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared < EPSILON) return pointDistance(point, start);
+  if (lengthSquared === 0) return pointDistance(point, start);
   const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
   return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
 }
@@ -25,8 +23,8 @@ function properIntersection(a: Point, b: Point, c: Point, d: Point): boolean {
   const abD = cross(a, b, d);
   const cdA = cross(c, d, a);
   const cdB = cross(c, d, b);
-  return ((abC > EPSILON && abD < -EPSILON) || (abC < -EPSILON && abD > EPSILON))
-    && ((cdA > EPSILON && cdB < -EPSILON) || (cdA < -EPSILON && cdB > EPSILON));
+  return ((abC > 0 && abD < 0) || (abC < 0 && abD > 0))
+    && ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0));
 }
 
 function boxesFar(a: Point, b: Point, c: Point, d: Point, margin: number): boolean {
@@ -73,7 +71,7 @@ function outsideEndpointDisks(
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const a = dx * dx + dy * dy;
-  if (a <= EPSILON) return shared.some((center) => pointDistance(start, center) < radius)
+  if (a === 0) return shared.some((center) => pointDistance(start, center) < radius)
     ? Object.freeze([])
     : Object.freeze([[start, end] as const]);
 
@@ -105,7 +103,7 @@ function outsideEndpointDisks(
     intervals = next;
   }
   return Object.freeze(intervals
-    .filter(([from, to]) => to - from > EPSILON)
+    .filter(([from, to]) => to > from)
     .map(([from, to]) => Object.freeze([interpolate(start, end, from), interpolate(start, end, to)] as const)));
 }
 
@@ -146,8 +144,7 @@ export function analyzeRoutePair(
     const tightSecond = clippedRouteSegments(second.samples, sharedPoints, tightRadius);
     for (const [firstStart, firstEnd] of tightFirst) for (const [secondStart, secondEnd] of tightSecond) {
       if (boxesFar(firstStart, firstEnd, secondStart, secondEnd, 2 * approximationTolerance)) continue;
-      if (properIntersection(firstStart, firstEnd, secondStart, secondEnd)
-        || (approximationTolerance > 0 && segmentDistance(firstStart, firstEnd, secondStart, secondEnd) <= 2 * approximationTolerance)) intersects = true;
+      if (segmentDistance(firstStart, firstEnd, secondStart, secondEnd) <= 2 * approximationTolerance) intersects = true;
     }
   }
   for (const [firstStart, firstEnd] of firstSegments) {
@@ -155,7 +152,7 @@ export function analyzeRoutePair(
       if (Number.isFinite(clearance) && boxesFar(firstStart, firstEnd, secondStart, secondEnd, Math.max(clearance, 0.2))) continue;
       const distance = segmentDistance(firstStart, firstEnd, secondStart, secondEnd);
       clearance = Math.min(clearance, distance);
-      if (distance <= EPSILON) intersects = true;
+      if (distance === 0) intersects = true;
       if (distance <= 0.2 && Math.abs(cross(firstStart, firstEnd, secondStart)) < 0.5 && Math.abs(cross(firstStart, firstEnd, secondEnd)) < 0.5) {
         coincidentSegments += 1;
       }
@@ -187,7 +184,7 @@ export function routesConflict(
     const tightFirst = clippedRouteSegments(first.samples, sharedPoints, 8);
     const tightSecond = clippedRouteSegments(second.samples, sharedPoints, 8);
     for (const [firstStart, firstEnd] of tightFirst) for (const [secondStart, secondEnd] of tightSecond) {
-      if (properIntersection(firstStart, firstEnd, secondStart, secondEnd)) return true;
+      if (segmentDistance(firstStart, firstEnd, secondStart, secondEnd) <= 0) return true;
     }
   }
   for (const [firstStart, firstEnd] of firstSegments) {

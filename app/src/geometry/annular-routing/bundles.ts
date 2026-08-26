@@ -1,3 +1,4 @@
+import { ROUTING_POLICY } from "../../config/routingPolicy";
 import {
   createAnnularRoute,
   createCoverCubicAnnularRoute,
@@ -543,11 +544,11 @@ export function generateCycleBundles(
   seam: SeamState,
   corridor: CycleCorridor,
   edges: readonly AnnularDirectedEdge[],
-  sampleCount = 65,
+  sampleCount: number = ROUTING_POLICY.renderSampleCount,
   throughHomotopyPolicy: "all" | "principal-only" | "nonprincipal-only" = "all",
-  maxCandidatesPerEdge = 140,
-  hardClearance = 7.5,
-  endpointRadius = 24,
+  maxCandidatesPerEdge: number = ROUTING_POLICY.maxCandidatesPerEdge,
+  hardClearance: number = ROUTING_POLICY.hardClearance,
+  endpointRadius: number = ROUTING_POLICY.commonEndpointRadius,
 ): readonly CycleRouteBundle[] {
   const maxBundles = Math.max(1, Math.floor(maxCandidatesPerEdge)) * Math.max(1, edges.length);
   return corridor.kind === "through"

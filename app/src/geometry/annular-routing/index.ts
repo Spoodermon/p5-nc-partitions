@@ -8,4 +8,5 @@ export * from "./intersections";
 export * from "./phase";
 export * from "./seams";
 export * from "./solver";
+export * from "./verification";
 export type * from "./types";

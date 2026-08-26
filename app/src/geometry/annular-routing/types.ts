@@ -60,6 +60,12 @@ export interface RoutingMetrics {
   readonly topologicalRejections?: number;
   readonly principalThroughFallbackUsed?: boolean;
   readonly throughRoutes?: readonly ThroughRouteDiagnostic[];
+  readonly requestedHardClearance?: number;
+  readonly maxSearchNodes?: number;
+  readonly principalSearchProof?: "feasible" | "proven-infeasible" | "not-proven";
+  readonly verificationTolerance?: number;
+  readonly verificationMaximumDepth?: number;
+  readonly verificationMaximumSegmentsPerRoute?: number;
 }
 
 export interface ThroughRouteDiagnostic {
@@ -123,9 +129,10 @@ export interface CycleRouteBundle {
 }
 
 export type RoutingFailureReason =
-  | "not-annular-noncrossing"
+  | "invalid-mathematical-input"
   | "search-limit-exceeded"
-  | "no-collision-free-routing";
+  | "no-route-within-routing-policy"
+  | "geometry-verification-failed";
 
 export interface RoutedAnnularSuccess {
   readonly isRoutable: true;

@@ -1,15 +1,16 @@
 import { failure, success, type Block, type DiscPartition, type Result } from "./types";
 
-function pairs(block: Block): readonly (readonly [number, number])[] {
-  const result: [number, number][] = [];
-  for (let first = 0; first < block.length; first += 1) {
-    for (let second = first + 1; second < block.length; second += 1) {
-      const a = block[first];
-      const c = block[second];
-      if (a !== undefined && c !== undefined) result.push([a, c]);
-    }
+/** Unique edges of the convex polygon spanned by a block; total edges are O(n). */
+function boundaryChords(block: Block): readonly (readonly [number, number])[] {
+  if (block.length < 2) return Object.freeze([]);
+  if (block.length === 2) return Object.freeze([[block[0] as number, block[1] as number] as const]);
+  const result: Array<readonly [number, number]> = [];
+  for (let index = 0; index < block.length; index += 1) {
+    const first = block[index] as number;
+    const second = block[(index + 1) % block.length] as number;
+    result.push(first < second ? [first, second] : [second, first]);
   }
-  return result;
+  return Object.freeze(result);
 }
 
 export function crossingWitness(partition: DiscPartition): readonly [number, number, number, number] | null {
@@ -19,8 +20,8 @@ export function crossingWitness(partition: DiscPartition): readonly [number, num
       const right = partition.blocks[secondBlock];
       if (!left || !right) continue;
 
-      for (const [a, c] of pairs(left)) {
-        for (const [b, d] of pairs(right)) {
+      for (const [a, c] of boundaryChords(left)) {
+        for (const [b, d] of boundaryChords(right)) {
           if (a < b && b < c && c < d) return Object.freeze([a, b, c, d]);
           if (b < a && a < d && d < c) return Object.freeze([b, a, d, c]);
         }

@@ -18,6 +18,7 @@ type ColorMode = "palette" | "single" | "kind" | "custom";
 type SelectedEdge = { readonly surface: "disc"; readonly edge: DirectedEdge } | { readonly surface: "annular"; readonly edge: AnnularDirectedEdge } | null;
 
 const figure = requireElement<HTMLDivElement>("figure");
+const figureShell = requireElement<HTMLDivElement>("figure-shell");
 const exampleSelect = requireElement<HTMLSelectElement>("example-select");
 const directionToggle = requireElement<HTMLInputElement>("direction-toggle");
 const ribbonFillToggle = requireElement<HTMLInputElement>("ribbon-fill-toggle");
@@ -319,6 +320,15 @@ exportButton.addEventListener("click", () => {
   const filename = state.mode === "disc" ? `disc-partition-n${state.discPartition.n}.svg` : `annular-permutation-p${state.annular.permutation.p}-q${state.annular.permutation.q}.svg`;
   downloadSvg(currentSvg, filename);
 });
+figureShell.addEventListener("pointermove", (event) => {
+  const bounds = figureShell.getBoundingClientRect();
+  figureShell.classList.toggle("is-download-visible", event.clientY <= bounds.top + bounds.height / 3);
+});
+figureShell.addEventListener("pointerleave", () => {
+  if (document.activeElement !== exportButton) figureShell.classList.remove("is-download-visible");
+});
+exportButton.addEventListener("focus", () => figureShell.classList.add("is-download-visible"));
+exportButton.addEventListener("blur", () => figureShell.classList.remove("is-download-visible"));
 
 discInput.value = partitionToString(state.discPartition);
 discN.value = String(state.discPartition.n);

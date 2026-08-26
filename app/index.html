@@ -18,7 +18,6 @@
       <section class="toolbar" aria-label="Diagram controls">
         <label class="example-control">Example<select id="example-select"></select></label>
         <label class="check-control"><input id="direction-toggle" type="checkbox" />Show direction</label>
-        <button id="export-button" class="icon-button" type="button" aria-label="Download SVG" title="Download SVG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4" /></svg></button>
 
         <div id="disc-controls" class="mode-inputs">
           <form id="disc-form" class="notation-form">
@@ -54,7 +53,10 @@
           <label class="font-control" for="number-font">Number font<select id="number-font"><option value="Newsreader">Newsreader</option><option value="Geist">Geist Sans</option><option value="Geist Mono">Geist Mono</option></select></label>
           <div class="selection-summary" aria-live="polite"><output id="selection-output">No edge selected</output><button id="clear-button" type="button" disabled>Clear</button></div>
         </aside>
-        <div id="figure" class="figure" aria-label="Permutation diagram"></div>
+        <div id="figure-shell" class="figure-shell">
+          <div id="figure" class="figure" aria-label="Permutation diagram"></div>
+          <button id="export-button" class="icon-button canvas-download" type="button" aria-label="Download SVG" title="Download SVG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4" /></svg></button>
+        </div>
         <aside class="side-panel color-controls" aria-label="Cycle colour controls">
           <h2>Cycle colours</h2>
           <label class="field-label" for="color-mode">Assignment<select id="color-mode"><option value="palette">Palette</option><option value="single">One colour</option><option value="kind">By annular kind</option><option value="custom">Per cycle</option></select></label>

@@ -341,7 +341,7 @@ describe("global annular routing", () => {
     if (result.isRoutable) expect(result.diagnostics.hardCollisionCount).toBe(0);
   }, 20_000);
 
-  it("uses the principal class or a proven fallback for the through four-cycle stress case", () => {
+  it("uses the principal class or truthfully marks an unproven fallback for the through four-cycle stress case", () => {
     const created = annularPermutationFromImages(1, 4, [4, 3, 1, 2, 5]);
     if (!created.ok) throw new Error(created.error.kind);
     const result = routeAnnularPermutation(created.value, { phaseCandidateCount: 9, sampleCount: 25, maxSearchNodes: 2_000 });
@@ -350,8 +350,11 @@ describe("global annular routing", () => {
       expect(result.diagnostics.hardCollisionCount).toBe(0);
       expect(result.diagnostics.minimumClearance).toBeGreaterThanOrEqual(DEFAULT_HARD_CLEARANCE);
       if (result.diagnostics.principalThroughFallbackUsed) {
-        expect(result.diagnostics.throughRoutes?.some((route) => route.principalClassProvenInfeasible)).toBe(true);
+        expect(result.diagnostics.principalSearchProof).toBe("not-proven");
+        expect(result.diagnostics.throughRoutes?.some((route) => route.selectedWinding !== route.principalWinding)).toBe(true);
+        expect(result.diagnostics.throughRoutes?.every((route) => !route.principalClassProvenInfeasible)).toBe(true);
       } else {
+        expect(result.diagnostics.principalSearchProof).toBe("feasible");
         expect(result.diagnostics.throughRoutes?.every((route) => route.selectedWinding === route.principalWinding)).toBe(true);
       }
     }

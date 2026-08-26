@@ -9,6 +9,7 @@ export const ROUTING_POLICY = Object.freeze({
   preferredClearance: 14,
   commonEndpointRadius: 24,
   verificationTolerance: 0.12,
+  verificationClearanceSafetyFactor: 2,
   verificationMaxDepth: 12,
   verificationMaxSegmentsPerRoute: 4096,
 });

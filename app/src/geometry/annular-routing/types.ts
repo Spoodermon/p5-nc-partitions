@@ -64,6 +64,7 @@ export interface RoutingMetrics {
   readonly maxSearchNodes?: number;
   readonly principalSearchProof?: "feasible" | "proven-infeasible" | "not-proven";
   readonly verificationTolerance?: number;
+  readonly verificationClearanceMargin?: number;
   readonly verificationMaximumDepth?: number;
   readonly verificationMaximumSegmentsPerRoute?: number;
 }
@@ -130,6 +131,7 @@ export interface CycleRouteBundle {
 
 export type RoutingFailureReason =
   | "invalid-mathematical-input"
+  | "invalid-routing-options"
   | "search-limit-exceeded"
   | "no-route-within-routing-policy"
   | "geometry-verification-failed";

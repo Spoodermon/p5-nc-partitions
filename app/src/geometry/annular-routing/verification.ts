@@ -56,6 +56,21 @@ export type RouteSetVerification =
   | { readonly ok: true; readonly analysis: ClearanceAnalysis; readonly routes: readonly AnnularRouteCandidate[] }
   | { readonly ok: false; readonly reason: "geometry-verification-failed"; readonly analysis?: ClearanceAnalysis; readonly routes?: readonly AnnularRouteCandidate[] };
 
+export function verificationClearanceMargin(): number {
+  return ROUTING_POLICY.verificationTolerance * ROUTING_POLICY.verificationClearanceSafetyFactor;
+}
+
+function conservativeClearance(analysis: ClearanceAnalysis, margin: number): ClearanceAnalysis {
+  const minimumClearance = Number.isFinite(analysis.minimumClearance)
+    ? Math.max(0, analysis.minimumClearance - margin)
+    : analysis.minimumClearance;
+  const worstPair = analysis.worstPair === null ? null : Object.freeze({
+    ...analysis.worstPair,
+    clearance: Math.max(0, analysis.worstPair.clearance - margin),
+  });
+  return Object.freeze({ ...analysis, minimumClearance, worstPair });
+}
+
 export function verifyRouteSet(routes: readonly AnnularRouteCandidate[], layout: AnnularLayout, hardClearance: number, commonEndpointRadius: number): RouteSetVerification {
   const verified: AnnularRouteCandidate[] = [];
   for (const candidate of routes) {
@@ -63,7 +78,9 @@ export function verifyRouteSet(routes: readonly AnnularRouteCandidate[], layout:
     if (!sampled.ok) return sampled;
     verified.push(Object.freeze({ ...candidate, samples: sampled.samples }));
   }
-  const analysis = analyzeRouteClearance(verified, layout, hardClearance, commonEndpointRadius);
-  if (analysis.hardCollisionCount !== 0 || analysis.minimumClearance < hardClearance) return Object.freeze({ ok: false, reason: "geometry-verification-failed" as const, analysis, routes: Object.freeze(verified) });
+  const margin = verificationClearanceMargin();
+  const rawAnalysis = analyzeRouteClearance(verified, layout, hardClearance + margin, commonEndpointRadius);
+  const analysis = conservativeClearance(rawAnalysis, margin);
+  if (rawAnalysis.hardCollisionCount !== 0 || analysis.minimumClearance < hardClearance) return Object.freeze({ ok: false, reason: "geometry-verification-failed" as const, analysis, routes: Object.freeze(verified) });
   return Object.freeze({ ok: true, analysis, routes: Object.freeze(verified) });
 }

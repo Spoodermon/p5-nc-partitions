@@ -138,7 +138,7 @@ function render(): void {
   drawDiagram(draw, result);
   const clearance = Number.isFinite(result.diagnostics.minimumClearance) ? format(result.diagnostics.minimumClearance) : "∞";
   const corridors = result.corridors.map((corridor) => `(${corridor.cycle.join(" ")})=${corridor.kind}`).join(", ");
-  const homotopy = result.diagnostics.principalThroughFallbackUsed ? "non-principal fallback proven necessary" : "principal through homotopy";
+  const homotopy = result.diagnostics.principalThroughFallbackUsed ? "non-principal fallback selected (necessity not proven)" : "principal through homotopy";
   summary.textContent = `${fixture.cycles} · phase ${format(result.phase)} · seams O${result.outerSeam}/I${result.innerSeam} · ${corridors} · ${homotopy} · ${result.routes.length} edges · hard collisions ${result.diagnostics.hardCollisionCount} · minimum clearance ${clearance} · ${format(result.diagnostics.elapsedMilliseconds)} ms · ${result.diagnostics.searchNodes} nodes`;
 }
 

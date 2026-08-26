@@ -9,6 +9,7 @@ The former p5 implementation is preserved only as historical source under [`lega
 ```sh
 cd app
 npm ci
+npx playwright install chromium
 npm run dev
 ```
 
@@ -21,17 +22,18 @@ cd app
 npm test                 # fast unit/integration tier
 npm run test:slow        # deterministic routing stress fixtures
 npm run test:exhaustive  # full p+q <= 5 routing sweep
-npm run test:release     # all tiers plus production build
+npm run benchmark        # representative timing ceilings
+npm run test:release     # all tiers, browser checks, benchmarks, and production build
 npm run build
 ```
 
-Production limits are centralized in `app/src/config/limits.ts`: disc support is at most 400; `p` and `q` are each at most 20; annular total support is at most 24; input text is at most 16,384 characters. Limit failures are reported as infrastructure limits, not mathematical rejection.
+Production limits are centralized in `app/src/config/limits.ts`: disc support is at most 400; `p` and `q` are separate decimal fields, each at most 20; annular total support is at most 24; partition/permutation notation is at most 16,384 characters. Whitespace-only annular notation denotes the identity permutation. Limit failures are reported as infrastructure limits, not mathematical rejection.
 
-Routing defaults are centralized in `app/src/config/routingPolicy.ts`: 9 phase candidates, 140 candidates per edge, 5,000 global search nodes, 65 rendering samples, hard clearance 7.5, preferred clearance 14, shared-endpoint radius 24, and adaptive verification tolerance 0.12 with depth/segment bounds of 12/4,096.
+Routing defaults are centralized in `app/src/config/routingPolicy.ts`: 9 phase candidates, 140 candidates per edge, 5,000 global search nodes, 65 rendering samples, hard clearance 7.5, preferred clearance 14, shared-endpoint radius 24, and adaptive verification tolerance 0.12 with a two-tolerance pairwise safety margin and depth/segment bounds of 12/4,096.
 
 ## Deployment
 
-GitHub Actions builds `app/` and deploys `app/dist/` to GitHub Pages. Production Vite builds use the project-site base `/p5-nc-partitions/`; local development uses `/`.
+GitHub Actions builds `app/` and deploys `app/dist/` to GitHub Pages. Production Vite builds use the project-site base `/p5-nc-partitions/`; local development uses `/`. Developer laboratories remain available under `/dev/` only in development and are excluded from `dist/`.
 
 ## Current architectural debt
 

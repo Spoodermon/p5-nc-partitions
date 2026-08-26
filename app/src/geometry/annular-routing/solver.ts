@@ -7,7 +7,7 @@ import { extractAnnularEdges } from "./edges";
 import { routesConflict } from "./intersections";
 import { annularPhaseCandidates, endpointPhasePenalty } from "./phase";
 import { annularSeamStates } from "./seams";
-import { verifyRouteSet } from "./verification";
+import { verificationClearanceMargin, verifyRouteSet } from "./verification";
 import type { AnnularRouteCandidate, CycleRouteBundle, RoutedAnnularDiagram, RoutedAnnularFailure, RoutedAnnularSuccess, RoutingMetrics, RoutingOptions, ThroughRouteDiagnostic } from "./types";
 
 export const DEFAULT_ROUTE_STROKE_WIDTH = ROUTING_POLICY.routeStrokeWidth;
@@ -148,9 +148,42 @@ function reserveSandwichedSingletons(
   });
 }
 
+function routingOptionsAreValid(options: RoutingOptions): boolean {
+  const finiteNonnegative = (value: number | undefined): boolean => value === undefined || (Number.isFinite(value) && value >= 0);
+  const boundedInteger = (value: number | undefined, minimum: number, maximum: number): boolean =>
+    value === undefined || (Number.isInteger(value) && value >= minimum && value <= maximum);
+  return boundedInteger(options.phaseCandidateCount, 2, 65)
+    && boundedInteger(options.sampleCount, 2, 4_097)
+    && boundedInteger(options.maxCandidatesPerEdge, 1, 10_000)
+    && boundedInteger(options.maxSearchNodes, 0, 1_000_000)
+    && finiteNonnegative(options.hardClearance)
+    && finiteNonnegative(options.commonEndpointRadius)
+    && finiteNonnegative(options.strokeWidth)
+    && finiteNonnegative(options.visualGap)
+    && finiteNonnegative(options.preferredClearance);
+}
+
+function throughRouteDiagnostics(routes: readonly AnnularRouteCandidate[]): readonly ThroughRouteDiagnostic[] {
+  return Object.freeze(routes.flatMap((route) => {
+    if (route.principalWinding === undefined || route.principalAngularDisplacement === undefined) return [];
+    const selectedAngularDisplacement = route.route.angularDisplacement;
+    return [Object.freeze({
+      edgeId: route.edge.id,
+      principalWinding: route.principalWinding,
+      selectedWinding: route.winding,
+      principalAngularDisplacement: route.principalAngularDisplacement,
+      selectedAngularDisplacement,
+      routeLength: route.routeLength ?? 0,
+      principalClassProvenInfeasible: false,
+      excessiveAngularTravel: Math.abs(selectedAngularDisplacement) > Math.abs(route.principalAngularDisplacement) + Math.PI / 2,
+    })];
+  }));
+}
+
 export function routeAnnularPermutation(value: AnnularPermutation, options: RoutingOptions = {}): RoutedAnnularDiagram {
   const started = performance.now();
   if (!isAnnularNoncrossing(value)) return Object.freeze({ isRoutable: false, permutation: value, reason: "invalid-mathematical-input", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
+  if (!routingOptionsAreValid(options)) return Object.freeze({ isRoutable: false, permutation: value, reason: "invalid-routing-options", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
   const phaseCount = options.phaseCandidateCount ?? ROUTING_POLICY.phaseCandidateCount;
   const sampleCount = options.sampleCount ?? ROUTING_POLICY.renderSampleCount;
   const maximumCandidatesPerEdge = options.maxCandidatesPerEdge ?? ROUTING_POLICY.maxCandidatesPerEdge;
@@ -158,6 +191,9 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
   const hard = options.hardClearance ?? (options.strokeWidth ?? DEFAULT_ROUTE_STROKE_WIDTH) + (options.visualGap ?? DEFAULT_VISUAL_GAP);
   const preferred = options.preferredClearance ?? DEFAULT_PREFERRED_CLEARANCE;
   const endpointRadius = options.commonEndpointRadius ?? DEFAULT_COMMON_ENDPOINT_RADIUS;
+  const clearanceMargin = verificationClearanceMargin();
+  const searchHard = hard + clearanceMargin;
+  if (![hard, preferred, endpointRadius, searchHard].every(Number.isFinite)) return Object.freeze({ isRoutable: false, permutation: value, reason: "invalid-routing-options", diagnostics: Object.freeze({ ...EMPTY_METRICS, elapsedMilliseconds: performance.now() - started }) } satisfies RoutedAnnularFailure);
   const budget: SearchBudget = { limit: maximumNodes, consumed: 0, exhausted: maximumNodes === 0 };
   const edges = extractAnnularEdges(value);
   const phases = annularPhaseCandidates(value.p, value.q, phaseCount);
@@ -167,6 +203,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
     requestedHardClearance: hard,
     maxSearchNodes: maximumNodes,
     verificationTolerance: ROUTING_POLICY.verificationTolerance,
+    verificationClearanceMargin: clearanceMargin,
     verificationMaximumDepth: ROUTING_POLICY.verificationMaxDepth,
     verificationMaximumSegmentsPerRoute: ROUTING_POLICY.verificationMaxSegmentsPerRoute,
   });
@@ -200,22 +237,23 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           Math.min(Math.max(sampleCount, 17), 33),
           "principal-only",
           maximumCandidatesPerEdge,
-          hard,
+          searchHard,
           endpointRadius,
         ));
         const bundleSets = reserveSandwichedSingletons(generatedBundleSets, value.p, value.q);
         searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
-        let solution = solveGreedyBundleState(singletonFirst(bundleSets), hard, endpointRadius, budget);
+        let solution = solveGreedyBundleState(singletonFirst(bundleSets), searchHard, endpointRadius, budget);
         let verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
         if (!verified?.ok) {
           if (solution) { verificationRejected = true; lastVerificationFailure = verified; }
-          solution = solveBundleState(bundleSets, hard, endpointRadius, budget);
+          solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget);
           verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
         }
         if (!solution) { if (budget.exhausted) return fail("search-limit-exceeded", phaseIndex + 1); continue; }
         if (!verified?.ok) { verificationRejected = true; lastVerificationFailure = verified; continue; }
         const clearance = verified.analysis;
         const deficit = Number.isFinite(clearance.minimumClearance) ? Math.max(0, preferred - clearance.minimumClearance) : 0;
+        const throughRoutes = throughRouteDiagnostics(verified.routes);
         return Object.freeze({
           isRoutable: true,
           permutation: value,
@@ -237,7 +275,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
             preferredClearanceDeficit: deficit,
             topologicalRejections,
             principalThroughFallbackUsed: false,
-            throughRoutes: Object.freeze([]),
+            throughRoutes,
             principalSearchProof: "feasible",
           }),
         } satisfies RoutedAnnularSuccess);
@@ -254,32 +292,32 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
       const generatedBundleSets = corridors.map((corridor) => generateCycleBundles(
         layout, seam, corridor,
         edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex),
-        Math.min(Math.max(sampleCount, 17), 33), "all", Math.min(maximumCandidatesPerEdge * 2, 280), hard, endpointRadius,
+        Math.min(Math.max(sampleCount, 17), 33), "all", Math.min(maximumCandidatesPerEdge * 2, 280), searchHard, endpointRadius,
       ));
       const bundleSets = reserveSandwichedSingletons(generatedBundleSets, value.p, value.q);
       searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
-      let solution = solveGreedyBundleState(singletonFirst(bundleSets), hard, endpointRadius, budget);
+      let solution = solveGreedyBundleState(singletonFirst(bundleSets), searchHard, endpointRadius, budget);
       let verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
       if (!verified?.ok) {
         if (solution) { verificationRejected = true; lastVerificationFailure = verified; }
-        solution = solveBundleState(bundleSets, hard, endpointRadius, budget);
+        solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget);
         verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
       }
       if (!solution) { if (budget.exhausted) return fail("search-limit-exceeded", fastPhases.length); continue; }
       if (!verified?.ok) { verificationRejected = true; lastVerificationFailure = verified; continue; }
       const clearance = verified.analysis;
+      const throughRoutes = throughRouteDiagnostics(verified.routes);
+      const selectedUsesNonPrincipal = throughRoutes.some((route) => route.selectedWinding !== route.principalWinding);
       return Object.freeze({
         isRoutable: true, permutation: value, layout, phase: layout.innerPhase,
         outerSeam: seam.outerSeam, innerSeam: seam.innerSeam, corridors,
         routes: verified.routes,
-        diagnostics: Object.freeze({ ...clearance, ...diagnosticContract, searchedPhaseCount: fastPhases.length, searchedCandidateCount: searchedCandidates, searchNodes: budget.consumed, elapsedMilliseconds: performance.now() - started, phaseScore: solution.score, routeScore: solution.score, preferredClearanceDeficit: Math.max(0, preferred - clearance.minimumClearance), topologicalRejections, principalThroughFallbackUsed: true, principalSearchProof: "not-proven", throughRoutes: Object.freeze([]) }),
+        diagnostics: Object.freeze({ ...clearance, ...diagnosticContract, searchedPhaseCount: fastPhases.length, searchedCandidateCount: searchedCandidates, searchNodes: budget.consumed, elapsedMilliseconds: performance.now() - started, phaseScore: solution.score, routeScore: solution.score, preferredClearanceDeficit: Math.max(0, preferred - clearance.minimumClearance), topologicalRejections, principalThroughFallbackUsed: selectedUsesNonPrincipal, principalSearchProof: selectedUsesNonPrincipal ? "not-proven" : "feasible", throughRoutes }),
       } satisfies RoutedAnnularSuccess);
     }
     return fail(budget.exhausted ? "search-limit-exceeded" : verificationRejected ? "geometry-verification-failed" : "no-route-within-routing-policy", Math.min(phases.length, 2));
   }
-  let principalSearchExhausted = false;
   for (const allowNonPrincipalThrough of [false, true]) {
-    if (allowNonPrincipalThrough) principalSearchExhausted = true;
     for (let phaseIndex = 0; phaseIndex < phases.length; phaseIndex += 1) {
       const phase = phases[phaseIndex] as number;
       const layout = createAnnularLayout(value.p, value.q, { innerPhase: phase });
@@ -292,39 +330,27 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           const bundleSets = corridors.map((corridor) => {
             const policy = corridor.kind !== "through" || allowNonPrincipalThrough ? "all" : "principal-only";
             const candidateLimit = allowNonPrincipalThrough ? Math.min(maximumCandidatesPerEdge * 2, 280) : maximumCandidatesPerEdge;
-            return generateCycleBundles(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), Math.max(sampleCount, 17), policy, candidateLimit, hard, endpointRadius);
+            return generateCycleBundles(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), Math.max(sampleCount, 17), policy, candidateLimit, searchHard, endpointRadius);
           });
           searchedCandidates += bundleSets.reduce((sum, bundles) => sum + bundles.length, 0);
-          const solution = solveBundleState(bundleSets, hard, endpointRadius, budget);
+          const solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget);
           if (!solution) { if (budget.exhausted) return fail("search-limit-exceeded", phaseIndex + 1, "not-proven"); continue; }
           const verified = verifyRouteSet(solution.routes, layout, hard, endpointRadius);
           if (!verified.ok) { verificationRejected = true; lastVerificationFailure = verified; continue; }
           const clearance = verified.analysis;
           const deficit = Number.isFinite(clearance.minimumClearance) ? Math.max(0, preferred - clearance.minimumClearance) : 0;
           const phaseScore = endpointPhasePenalty(value, edges, phase) + solution.score + deficit * 0.3 - Math.min(clearance.minimumClearance, preferred) * 0.03;
-          const throughRoutes: readonly ThroughRouteDiagnostic[] = Object.freeze(solution.routes.flatMap((route) => {
-          if (route.principalWinding === undefined || route.principalAngularDisplacement === undefined) return [];
-          const selectedAngularDisplacement = route.route.angularDisplacement;
-          return [Object.freeze({
-            edgeId: route.edge.id,
-            principalWinding: route.principalWinding,
-            selectedWinding: route.winding,
-            principalAngularDisplacement: route.principalAngularDisplacement,
-            selectedAngularDisplacement,
-            routeLength: route.routeLength ?? 0,
-            principalClassProvenInfeasible: allowNonPrincipalThrough && principalSearchExhausted,
-            excessiveAngularTravel: Math.abs(selectedAngularDisplacement) > Math.abs(route.principalAngularDisplacement) + Math.PI / 2,
-          })];
-          }));
+          const throughRoutes = throughRouteDiagnostics(verified.routes);
           const angularWarnings = throughRoutes
             .filter((route) => route.excessiveAngularTravel && !route.principalClassProvenInfeasible)
             .map((route) => `${route.edgeId} uses excessive non-principal angular travel`);
-          return Object.freeze({ isRoutable: true, permutation: value, layout, phase: layout.innerPhase, outerSeam: seam.outerSeam, innerSeam: seam.innerSeam, corridors, routes: verified.routes, diagnostics: Object.freeze({ ...clearance, ...diagnosticContract, labelWarnings: Object.freeze([...clearance.labelWarnings, ...angularWarnings]), searchedPhaseCount: phaseIndex + 1, searchedCandidateCount: searchedCandidates, searchNodes: budget.consumed, elapsedMilliseconds: performance.now() - started, phaseScore, routeScore: solution.score, preferredClearanceDeficit: deficit, topologicalRejections, principalThroughFallbackUsed: allowNonPrincipalThrough, principalSearchProof: allowNonPrincipalThrough ? "proven-infeasible" : "feasible", throughRoutes }) } satisfies RoutedAnnularSuccess);
+          const selectedUsesNonPrincipal = throughRoutes.some((route) => route.selectedWinding !== route.principalWinding);
+          return Object.freeze({ isRoutable: true, permutation: value, layout, phase: layout.innerPhase, outerSeam: seam.outerSeam, innerSeam: seam.innerSeam, corridors, routes: verified.routes, diagnostics: Object.freeze({ ...clearance, ...diagnosticContract, labelWarnings: Object.freeze([...clearance.labelWarnings, ...angularWarnings]), searchedPhaseCount: phaseIndex + 1, searchedCandidateCount: searchedCandidates, searchNodes: budget.consumed, elapsedMilliseconds: performance.now() - started, phaseScore, routeScore: solution.score, preferredClearanceDeficit: deficit, topologicalRejections, principalThroughFallbackUsed: selectedUsesNonPrincipal, principalSearchProof: selectedUsesNonPrincipal ? "not-proven" : "feasible", throughRoutes }) } satisfies RoutedAnnularSuccess);
         }
       }
     }
   }
-  return fail(verificationRejected ? "geometry-verification-failed" : "no-route-within-routing-policy", phases.length, principalSearchExhausted ? "proven-infeasible" : "not-proven");
+  return fail(verificationRejected ? "geometry-verification-failed" : "no-route-within-routing-policy", phases.length, "not-proven");
 }
 
 export function serializeRoutedAnnularDiagram(diagram: RoutedAnnularDiagram): string {

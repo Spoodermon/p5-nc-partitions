@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { INPUT_LIMITS } from "../src/config/limits";
 import { ROUTING_POLICY } from "../src/config/routingPolicy";
-import { adaptiveRouteSamples, routeAnnularPermutation } from "../src/geometry/annular-routing";
-import { createAnnularLayout, createAnnularRoute } from "../src/geometry/annular";
-import { annularPermutationFromImages, parseAnnularPermutation, parseDiscPartition, partitionToString } from "../src/math";
+import { adaptiveRouteSamples, analyzeRouteClearance, routeAnnularPermutation, type RoutedAnnularSuccess } from "../src/geometry/annular-routing";
+import { createAnnularLayout, createAnnularRoute, sampleAnnularRoute } from "../src/geometry/annular";
+import { parseAnnularPermutation, parseDiscPartition, partitionToString } from "../src/math";
 import { processAnnularInput, resolveCanonicalAnnularBlocks } from "../src/production/annularController";
 
 function annular(text: string, p: number, q: number) {
   const result = parseAnnularPermutation(text, p, q);
   if (!result.ok) throw new Error(result.error.kind);
   return result.value;
+}
+
+function denseClearance(routed: RoutedAnnularSuccess, hardClearance: number, sampleCount = 5_001): number {
+  const routes = routed.routes.map((candidate) => ({ ...candidate, samples: sampleAnnularRoute(candidate.route, sampleCount) }));
+  return analyzeRouteClearance(routes, routed.layout, hardClearance, ROUTING_POLICY.commonEndpointRadius).minimumClearance;
 }
 
 describe("hostile input and supported boundaries", () => {
@@ -77,31 +82,55 @@ describe("bounded auto-orientation", () => {
 });
 
 describe("truthful routing contracts", () => {
-  it("requires explicit reduced clearance for the former (1,4) coarse-sampling admission", () => {
-    const created = annularPermutationFromImages(1, 4, [3, 2, 5, 4, 1]);
-    if (!created.ok) throw new Error(created.error.kind);
-    const routed = routeAnnularPermutation(created.value, { phaseCandidateCount: 2, maxCandidatesPerEdge: 20, maxSearchNodes: 1_000, hardClearance: 0.1 });
-    expect(routed.isRoutable, `${routed.isRoutable ? "success" : routed.reason}: ${JSON.stringify(routed.diagnostics)}`).toBe(true);
-    if (routed.isRoutable) {
-      expect(routed.diagnostics.minimumClearance).toBeGreaterThanOrEqual(0.1);
-      expect(routed.diagnostics.minimumClearance).toBeLessThan(7.5);
-      expect(routed.diagnostics.requestedHardClearance).toBe(0.1);
-    }
+  it("rejects the former (1,4) approximation false positive and finds a densely verified route", () => {
+    const routed = routeAnnularPermutation(annular("(1 4 5)(2)(3)", 1, 4), { phaseCandidateCount: 2, maxCandidatesPerEdge: 20, maxSearchNodes: 1_000 });
+    expect(routed.isRoutable, routed.isRoutable ? "success" : `${routed.reason}: ${JSON.stringify(routed.diagnostics)}`).toBe(true);
+    if (!routed.isRoutable) return;
+    expect(routed.diagnostics.minimumClearance).toBeGreaterThanOrEqual(ROUTING_POLICY.hardClearance);
+    expect(denseClearance(routed, ROUTING_POLICY.hardClearance)).toBeGreaterThanOrEqual(ROUTING_POLICY.hardClearance);
   }, 30_000);
 
   it("never weakens a requested hard clearance of 10", () => {
     const routed = routeAnnularPermutation(annular("(1 11)(2 3 16)(4 5 6)(7 13)(8)(9 12)(10)(14 15)(17)", 10, 7), { hardClearance: 10 });
-    if (routed.isRoutable) expect(routed.diagnostics.minimumClearance).toBeGreaterThanOrEqual(10);
-    else expect(["search-limit-exceeded", "no-route-within-routing-policy", "geometry-verification-failed"]).toContain(routed.reason);
+    expect(routed.isRoutable, routed.isRoutable ? "success" : routed.reason).toBe(true);
+    if (!routed.isRoutable) return;
+    expect(routed.diagnostics.minimumClearance).toBeGreaterThanOrEqual(10);
   }, 20_000);
 
   it("keeps sampleCount=2 out of final collision truth for a (1,3) regression", () => {
     const routed = routeAnnularPermutation(annular("(1 3)(2 4)", 1, 3), { sampleCount: 2 });
-    if (routed.isRoutable) {
-      expect(routed.diagnostics.hardCollisionCount).toBe(0);
-      expect(routed.diagnostics.minimumClearance).toBeGreaterThanOrEqual(routed.diagnostics.requestedHardClearance ?? ROUTING_POLICY.hardClearance);
-      expect(routed.routes.every((route) => route.samples.length > 2)).toBe(true);
-    } else expect(routed.reason).not.toBe("invalid-mathematical-input");
+    expect(routed.isRoutable, routed.isRoutable ? "success" : routed.reason).toBe(true);
+    if (!routed.isRoutable) return;
+    expect(routed.diagnostics.hardCollisionCount).toBe(0);
+    expect(routed.diagnostics.minimumClearance).toBeGreaterThanOrEqual(ROUTING_POLICY.hardClearance);
+    expect(routed.routes.every((route) => route.samples.length > 2)).toBe(true);
+    expect(denseClearance(routed, ROUTING_POLICY.hardClearance, 1_001)).toBeGreaterThanOrEqual(ROUTING_POLICY.hardClearance);
+  });
+
+  it("derives principal proof state from the selected route class", () => {
+    const routed = routeAnnularPermutation(annular("(1 2 5 4)(3)", 2, 3));
+    expect(routed.isRoutable, routed.isRoutable ? "success" : routed.reason).toBe(true);
+    if (!routed.isRoutable) return;
+    expect(routed.diagnostics.throughRoutes?.every((route) => route.selectedWinding === route.principalWinding)).toBe(true);
+    expect(routed.diagnostics.principalThroughFallbackUsed).toBe(false);
+    expect(routed.diagnostics.principalSearchProof).toBe("feasible");
+    expect(routed.diagnostics.throughRoutes?.every((route) => !route.principalClassProvenInfeasible)).toBe(true);
+  });
+
+  it.each([
+    { maxSearchNodes: Number.NaN },
+    { maxSearchNodes: Number.POSITIVE_INFINITY },
+    { hardClearance: Number.NaN },
+    { hardClearance: Number.POSITIVE_INFINITY },
+    { sampleCount: Number.NaN },
+    { phaseCandidateCount: Number.POSITIVE_INFINITY },
+    { strokeWidth: Number.POSITIVE_INFINITY },
+    { visualGap: Number.NaN },
+    { strokeWidth: Number.MAX_VALUE, visualGap: Number.MAX_VALUE },
+  ])("rejects invalid numeric routing options structurally: $0", (options) => {
+    const routed = routeAnnularPermutation(annular("(1)(2)", 1, 1), options);
+    expect(routed.isRoutable).toBe(false);
+    if (!routed.isRoutable) expect(routed.reason).toBe("invalid-routing-options");
   });
 
   it("treats maxSearchNodes as one call-wide cap", () => {

@@ -8,16 +8,18 @@
     "build": "tsc --noEmit && vite build && npm run verify:dist",
     "verify:dist": "node scripts/verify-dist.mjs",
     "preview": "vite preview",
-    "test": "vitest run --exclude '**/*.slow.test.ts' --exclude '**/*.exhaustive.test.ts' --exclude '**/*.benchmark.test.ts'",
+    "test": "vitest run --exclude 'e2e/**' --exclude '**/*.slow.test.ts' --exclude '**/*.exhaustive.test.ts' --exclude '**/*.benchmark.test.ts'",
     "test:slow": "vitest run tests/*.slow.test.ts",
     "test:exhaustive": "vitest run tests/*.exhaustive.test.ts",
-    "test:release": "npm test && npm run test:slow && npm run test:exhaustive && npm run build",
-    "benchmark": "vitest run tests/performance.benchmark.test.ts"
+    "test:release": "npm test && npm run test:slow && npm run test:browser && npm run benchmark && npm run test:exhaustive && npm run build",
+    "test:browser": "playwright test",
+    "benchmark": "vitest run --disableConsoleIntercept tests/performance.benchmark.test.ts"
   },
   "dependencies": {
     "@svgdotjs/svg.js": "3.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "jsdom": "29.1.1",
     "typescript": "7.0.2",
     "vite": "8.2.2",

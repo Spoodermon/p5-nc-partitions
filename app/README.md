@@ -82,7 +82,7 @@ The isolated developer laboratory is available during development at:
 /dev/annular-geometry.html
 ```
 
-It uses the canonical `0 0 1000 1000` coordinate system with centre `(500,500)`, outer radius `370`, and inner radius `170`. Outer labels increase clockwise:
+It uses the canonical `0 0 1000 1000` coordinate system with centre `(500,500)`, outer radius `370`, and inner radius `136`. Outer labels increase clockwise:
 
 ```text
 θout(i) = -π/2 + 2π(i-1)/p
@@ -120,11 +120,11 @@ The complete-permutation routing laboratory is available at:
 
 The production router first rejects input that is not mathematically annular-noncrossing. It extracts every directed cycle edge, searches 9 deterministic phase candidates, builds bounded candidate sets, and assigns them with deterministic backtracking. Same-boundary candidates use explicit excursion lanes; return edges prefer deeper lanes. Through candidates use bounded angular-bias families, and opposite directed edges in a two-cycle receive paired biases.
 
-Candidate heuristics use 65 samples by default, but public sampling density never controls final admission. Every successful plan is independently resampled by adaptive subdivision of `pointAt(t)` to a 0.12 viewBox-unit flatness tolerance (maximum depth 12 and 4,096 segments per route), then checked for intersection, sustained overlap, and clearance. A radius-24 neighbourhood is ignored only around a shared mathematical endpoint. The default hard clearance is 7.5 viewBox units; requested hard clearance is never weakened. Label proximity is a soft warning.
+Candidate heuristics use 65 samples by default, but public sampling density never controls final admission. Every successful plan is independently resampled by adaptive subdivision of `pointAt(t)` to a 0.12 viewBox-unit flatness tolerance (maximum depth 12 and 4,096 segments per route), then checked for intersection, sustained overlap, and clearance. Admission reserves twice the flatness tolerance (0.24 units) for pairwise approximation error and reports clearance after subtracting that margin. A radius-24 neighbourhood is ignored only around a shared mathematical endpoint. The default hard clearance is 7.5 viewBox units; requested hard clearance is never weakened. Label proximity is a soft warning.
 
-Search is bounded to 140 candidates per edge and 5,000 nodes for the entire routing call by default. Every phase, seam, principal/fallback pass, greedy attempt, and backtracking state shares that budget. Exhaustion returns `search-limit-exceeded`; policy exhaustion and verification failure have distinct reasons. Principal infeasibility is claimed only after the configured principal candidate space is exhausted without hitting the global budget. Route-plan serialization and tie-breaking are deterministic.
+Search is bounded to 140 candidates per edge and 5,000 nodes for the entire routing call by default. Every phase, seam, principal/fallback pass, greedy attempt, and backtracking state shares that budget. Exhaustion returns `search-limit-exceeded`; policy exhaustion, invalid programmatic options, and verification failure have distinct reasons. The router reports `feasible` when its selected through routes are principal and otherwise conservatively reports `not-proven`; it does not claim that the principal class is infeasible. Route-plan serialization and tie-breaking are deterministic.
 
-The production renderer consumes the admitted routed diagram directly. Developer diagnostics remain confined to the laboratory.
+The production renderer consumes the admitted routed diagram directly. Developer laboratories are served during development but excluded from production builds.
 
 ## Renderer
 

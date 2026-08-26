@@ -96,8 +96,8 @@ function fromCycles(p: number, q: number, cycles: readonly (readonly number[])[]
 
 /**
  * Treats entered cycles as blocks and chooses a stable annular-noncrossing
- * cyclic order. Annular blocks do not have a unique orientation in general,
- * so ties use the lexicographically smallest normalized cycle notation.
+ * cyclic order. Annular blocks do not have a unique orientation in general;
+ * the first admissible candidate in the documented deterministic order wins.
  */
 export function resolveCanonicalAnnularBlocks(
   value: AnnularPermutation,

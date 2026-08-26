@@ -122,7 +122,7 @@ fieldset {
 
 .notation-form {
   display: grid;
-  grid-template-columns: 54px auto minmax(200px, 460px) auto auto;
+  grid-template-columns: auto minmax(200px, 460px) auto 54px auto;
   gap: 8px;
   align-items: center;
 }
@@ -135,7 +135,7 @@ fieldset {
   font-weight: 700;
 }
 
-.notation-form label:first-child { display: grid; gap: 5px; }
+.notation-form label:has(.size-input) { display: grid; gap: 5px; }
 .size-input { width: 54px; }
 
 .notation-form input,
@@ -175,7 +175,7 @@ fieldset {
 
 .annular-form {
   display: grid;
-  grid-template-columns: 60px 60px minmax(240px, 560px) auto auto;
+  grid-template-columns: minmax(240px, 560px) auto 60px 60px auto;
   gap: 8px;
   align-items: end;
 }
@@ -411,8 +411,8 @@ fieldset {
   }
 
   .mode-inputs { grid-template-columns: minmax(0, 1fr) auto; }
-  .notation-form { grid-template-columns: 48px auto minmax(130px, 1fr) auto auto; }
-  .annular-form { grid-template-columns: 54px 54px minmax(150px, 1fr) auto auto; }
+  .notation-form { grid-template-columns: auto minmax(130px, 1fr) auto 48px auto; }
+  .annular-form { grid-template-columns: minmax(150px, 1fr) auto 54px 54px auto; }
 
   .workspace { grid-template-columns: 1fr; }
   .figure { grid-row: 1; width: min(900px, 100%); }

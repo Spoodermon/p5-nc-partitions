@@ -119,6 +119,32 @@ describe("global annular routing", () => {
     expect(returning?.route.angularDisplacement).toBeGreaterThan(0);
   });
 
+  it("closes a short contiguous inner cycle across its occupied interval", () => {
+    const result = routeAnnularPermutation(parsed("(1 5)(2 4)(3)(6)(7 8 9)(10)", 5, 5));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    const returning = result.routes.find((route) => route.edge.startLabel === 9 && route.edge.endLabel === 7);
+    expect(returning?.edge.role).toBe("return");
+    expect(returning?.route.angularDisplacement).toBeGreaterThan(0);
+    expect(returning?.route.pointAt(0.5).y, JSON.stringify({
+      phase: result.phase,
+      start: returning?.route.startLiftAngle,
+      end: returning?.route.endLiftAngle,
+      displacement: returning?.route.angularDisplacement,
+      midpoint: returning?.route.coverPointAt(0.5),
+    })).toBeGreaterThan(result.layout.center.y);
+  });
+
+  it("keeps a non-contiguous outer return on its principal closing interval", () => {
+    const result = routeAnnularPermutation(parsed("(1 3 5)(2)(4)(6 7)(8)(9)(10)(11 13)(12)", 9, 4));
+    expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.isRoutable) return;
+    const returning = result.routes.find((route) => route.edge.startLabel === 5 && route.edge.endLabel === 1);
+    expect(returning?.edge.role).toBe("return");
+    expect(returning?.route.angularDisplacement).toBeLessThan(0);
+    expect(Math.abs(returning?.route.angularDisplacement ?? Infinity)).toBeLessThan(Math.PI);
+  });
+
   it("builds a positive-area fill region for every routed cycle shape", () => {
     for (const [text, p, q] of [
       ["(1)(2)", 1, 1],
@@ -267,7 +293,8 @@ describe("global annular routing", () => {
     if (!routed.isRoutable) return;
     const singleton = routed.routes.find((route) => route.edge.startLabel === 4 && route.edge.role === "singleton");
     expect(singleton?.excursion).toBeGreaterThanOrEqual(0.18);
-    expect(Math.abs(singleton?.angularBias ?? 0)).toBeGreaterThanOrEqual(0.24);
+    expect(Math.abs(singleton?.angularBias ?? 0)).toBeGreaterThanOrEqual(0.18);
+    expect(Math.abs(singleton?.angularBias ?? Infinity)).toBeLessThanOrEqual(0.24);
   }, 10_000);
 
   it("is deterministic and gives opposite directed two-cycle edges distinct routes", () => {

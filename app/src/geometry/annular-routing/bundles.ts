@@ -151,14 +151,13 @@ function pureRoute(
   edgeDeckOffset: number,
 ): AnnularRoute {
   const [start, rawEnd] = normalizedLiftAngles(layout, edge, lifts);
-  const noncontiguousInnerReturn = corridor.kind === "inner-collar"
-    && edge.cycleLength > 2
+  const noncontiguousBoundaryReturn = edge.cycleLength > 2
     && edge.role === "return"
     && !followsContiguousBoundaryChain(layout, corridor);
   // The -1 deck slot doubles as a deliberately lower-ranked compatibility
   // route for small, crowded annuli where the canonical long return cannot
   // meet hard clearance. Normal candidates retain the canonical orientation.
-  const useCompatibilityReturn = noncontiguousInnerReturn && edgeDeckOffset === -1;
+  const useCompatibilityReturn = noncontiguousBoundaryReturn && edgeDeckOffset === -1;
   let end = rawEnd + (useCompatibilityReturn ? 0 : edgeDeckOffset * TWO_PI);
   const effectiveDeckOffset = useCompatibilityReturn ? 0 : edgeDeckOffset;
   if (edge.cycleLength === 2) {
@@ -197,7 +196,7 @@ function pureRoute(
     if (positiveMembers !== negativeMembers) end = start + (positiveMembers > negativeMembers ? Math.PI : -Math.PI);
   } else if (edge.cycleLength > 2 && (
     followsContiguousBoundaryChain(layout, corridor)
-    || (noncontiguousInnerReturn && !useCompatibilityReturn)
+    || (noncontiguousBoundaryReturn && !useCompatibilityReturn)
   )) {
     // A pure boundary cycle is a ribbon around an open angular chain.  Its
     // first n-1 edges advance in the boundary's native direction; the closing
@@ -221,9 +220,9 @@ function pureRoute(
     let displacement = edge.role === "return"
       ? -forwardTravel
       : directedDisplacement(edge.startLabel, edge.endLabel);
-    // Collision-avoidance deck fallbacks may add a turn, but never reverse the
-    // established orientation of this edge.
-    displacement += Math.sign(displacement) * Math.abs(edgeDeckOffset) * TWO_PI;
+    // A pure chain may change radial lanes to avoid a collision, but adding a
+    // full deck turn changes a short closing arc into a visually and
+    // topologically gratuitous wrap around the annulus.
     end = start + displacement;
   }
   const displacement = end - start;
@@ -240,15 +239,16 @@ function pureRoute(
       ? (edge.edgeIndex === 0 ? 0 : 0.19)
       : (edge.edgeIndex === 0 ? 0.23 : spanFraction >= 0.45 ? 0.07 : 0.02)
     : edge.role === "return"
-      ? corridor.kind === "outer-collar" && layout.p >= 6
-        ? Math.max(0.14, Math.min(0.42, 1.84 * spanFraction ** 3))
-        : Math.min(0.42, 1.84 * spanFraction ** 3)
+      ? Math.min(0.42, (spanFraction > 0.5 ? 1.84 : 0.85) * spanFraction ** 3)
       : Math.min(0.23, 1.84 * spanFraction ** 3);
-  const innerReturnOutwardBonus = corridor.kind === "inner-collar" && edge.role === "return" && edge.cycleLength > 2
+  const innerReturnOutwardBonus = corridor.kind === "inner-collar" && edge.role === "return" && edge.cycleLength > 2 && spanFraction > 0.5
     ? 0.06 * spanFraction
     : 0;
+  const chainReturnLane = edge.role === "return" && edge.cycleLength > 2 && followsContiguousBoundaryChain(layout, corridor)
+    ? 0.1
+    : 0;
   const maximumDepth = edge.cycleLength === 2 ? 0.5 : edge.role === "return" ? 0.56 : 0.27;
-  const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth + innerReturnOutwardBonus);
+  const depth = Math.min(maximumDepth, baseDepth + Math.abs(effectiveDeckOffset) * 0.1 + spanDepth + innerReturnOutwardBonus + chainReturnLane);
   const u = corridor.kind === "outer-collar" ? 1 - depth : depth;
   return createCoverCubicAnnularRoute(layout, {
     startLabel: edge.startLabel,
@@ -376,17 +376,18 @@ function pureBundles(
     const variants: CycleRouteBundle[] = [];
     const boundarySize = edge.startBoundary === "outer" ? layout.p : layout.q;
     const availableAngularSpace = TWO_PI / boundarySize;
-    const preferredBias = Math.min(0.34, Math.max(0.16, availableAngularSpace * 0.45));
+    const preferredBias = Math.min(0.24, Math.max(0.13, availableAngularSpace * 0.34));
     const middleRadius = (layout.outerRadius + layout.innerRadius) / 2;
     const middleU = Math.log(middleRadius / layout.innerRadius) / Math.log(layout.outerRadius / layout.innerRadius);
-    const preferredExcursion = edge.startBoundary === "outer" ? 1 - middleU : middleU;
+    const midpointExcursion = edge.startBoundary === "outer" ? 1 - middleU : middleU;
+    const preferredExcursion = midpointExcursion * 0.84;
     const excursions = [...new Set([
       preferredExcursion,
       preferredExcursion * 0.82,
       preferredExcursion * 0.66,
-      0.14, 0.19, 0.25, 0.1, 0.08, 0.05, 0.03,
+      midpointExcursion, 0.14, 0.19, 0.25, 0.1, 0.08, 0.05, 0.03,
     ].map((value) => Number(value.toFixed(4))))];
-    for (const excursion of excursions) for (const angularBias of [0.08, -0.08, 0.12, -0.12, 0.16, -0.16, 0.24, -0.24, 0.34, -0.34]) {
+    for (const excursion of excursions) for (const angularBias of [0.06, -0.06, 0.1, -0.1, 0.14, -0.14, 0.19, -0.19, 0.24, -0.24]) {
       const route = createAnnularRoute(layout, {
         startLabel: edge.startLabel,
         endLabel: edge.endLabel,

@@ -160,6 +160,20 @@ function cyclicSeparation(start: number, end: number, vertexCount: number): numb
   return Math.min(direct, vertexCount - direct);
 }
 
+function cycleInteriorBend(start: Vertex, end: Vertex, edge: DirectedEdge, vertexCount: number): Point {
+  const chord = subtract(end, start);
+  const left = normalize({ x: -chord.y, y: chord.x });
+  let signedArea = 0;
+  for (const label of edge.cycle) {
+    if (label === edge.start || label === edge.end) continue;
+    const angle = -Math.PI / 2 + ((label - 1) * Math.PI * 2) / vertexCount;
+    const point = { x: DISC_CENTER.x + DISC_RADIUS * Math.cos(angle), y: DISC_CENTER.y + DISC_RADIUS * Math.sin(angle) };
+    signedArea += chord.x * (point.y - start.y) - chord.y * (point.x - start.x);
+  }
+  if (Math.abs(signedArea) > 1e-7) return scale(left, Math.sign(signedArea));
+  return normalize(subtract(DISC_CENTER, midpoint(start, end)));
+}
+
 export function arcDepth(edge: DirectedEdge, vertexCount: number): number {
   if (edge.role === "singleton") return 54;
   const separation = cyclicSeparation(edge.start, edge.end, vertexCount);
@@ -167,11 +181,36 @@ export function arcDepth(edge: DirectedEdge, vertexCount: number): number {
   // edges already bend to opposite sides of the diameter, so a shared depth
   // gives the ribbon reflection symmetry instead of an oversized return side.
   if (edge.cycle.length === 2 && separation * 2 === vertexCount) return 142;
-  const laneOffset = edge.lane * 32;
-  if (edge.role === "return") {
-    return 170 + separation * 28 + laneOffset;
-  }
-  return 58 + separation * 18 + laneOffset;
+  const baseDepth = 58 + separation * 18;
+  // A polygonal cycle has no geometrically privileged closing edge. Equal
+  // cyclic spans therefore use equal curvature in either direction, which
+  // keeps the closing arc from folding back through its own cycle. A
+  // two-cycle alone needs a modest second lane so both directions stay visible.
+  if (edge.cycle.length === 2) return baseDepth + (edge.role === "return" ? 38 : 0);
+  return baseDepth;
+}
+
+function cubicPoint(start: Point, control1: Point, control2: Point, end: Point, t: number): Point {
+  const remaining = 1 - t;
+  return {
+    x: remaining ** 3 * start.x + 3 * remaining ** 2 * t * control1.x + 3 * remaining * t ** 2 * control2.x + t ** 3 * end.x,
+    y: remaining ** 3 * start.y + 3 * remaining ** 2 * t * control1.y + 3 * remaining * t ** 2 * control2.y + t ** 3 * end.y,
+  };
+}
+
+export function sampleDiscArc(start: Point, end: Point, geometry: ArcGeometry, sampleCount = 97): readonly Point[] {
+  const startToControl = midpoint(start, geometry.control1);
+  const betweenControls = midpoint(geometry.control1, geometry.control2);
+  const controlToEnd = midpoint(geometry.control2, end);
+  const leftControl = midpoint(startToControl, betweenControls);
+  const rightControl = midpoint(betweenControls, controlToEnd);
+  const curveMidpoint = midpoint(leftControl, rightControl);
+  return Object.freeze(Array.from({ length: sampleCount }, (_, index) => {
+    const progress = index / (sampleCount - 1);
+    return progress <= 0.5
+      ? cubicPoint(start, startToControl, leftControl, curveMidpoint, progress * 2)
+      : cubicPoint(curveMidpoint, rightControl, controlToEnd, end, (progress - 0.5) * 2);
+  }));
 }
 
 export function makeDiscArc(
@@ -186,7 +225,9 @@ export function makeDiscArc(
   const chordMidpoint = midpoint(start, end);
   const depth = arcDepth(edge, vertexCount);
 
-  let bendDirection = normalize(subtract(DISC_CENTER, chordMidpoint));
+  let bendDirection = edge.cycle.length > 2
+    ? cycleInteriorBend(start, end, edge, vertexCount)
+    : normalize(subtract(DISC_CENTER, chordMidpoint));
   let control1: Point;
   let control2: Point;
 
@@ -197,7 +238,7 @@ export function makeDiscArc(
     control2 = add(add(start, scale(tangent, -58)), scale(inward, depth));
     // Antipodal endpoints have no unique inward normal. A two-cycle deliberately
     // assigns its two directions to opposite sides, producing a readable lens.
-  } else if (magnitude(bendDirection) < 1e-9) {
+  } else if (edge.cycle.length === 2 && magnitude(bendDirection) < 1e-9) {
     const perpendicular = { x: -chordDirection.y, y: chordDirection.x };
     bendDirection = perpendicular;
     const handle = Math.min(155, Math.max(68, chordLength * 0.27));
@@ -205,24 +246,16 @@ export function makeDiscArc(
     control1 = add(add(start, scale(chordDirection, handle)), offset);
     control2 = add(add(end, scale(chordDirection, -handle)), offset);
   } else {
-    // Radial control handles reproduce the calm disc-arc grammar of the p5
-    // reference while making depth explicit: larger depth pulls both handles
-    // farther toward the centre and creates the sweeping return hierarchy.
-    const startInward = normalize(subtract(DISC_CENTER, start));
-    const endInward = normalize(subtract(DISC_CENTER, end));
-    control1 = add(start, scale(startInward, depth));
-    control2 = add(end, scale(endInward, depth));
-
-    // Near-antipodal endpoints can make radial handles appear almost chordal.
-    // Add a deterministic common inward bow so every edge remains visibly curved.
-    const midpointRadius = magnitude(subtract(chordMidpoint, DISC_CENTER));
-    const nearAntipodalBow = Math.max(0, DISC_RADIUS * 0.4 - midpointRadius);
-    if (nearAntipodalBow > 0) {
-      const roleBoost = edge.role === "return" ? 1.15 : 0.75;
-      const bow = scale(bendDirection, nearAntipodalBow * roleBoost);
-      control1 = add(control1, bow);
-      control2 = add(control2, bow);
-    }
+    // Both handles use one polygon-interior normal. Unlike independent radial
+    // handles, this cannot form an S-turn near either endpoint. Keeping the bow
+    // bounded by the chord length also prevents long diagonals from sweeping
+    // through shorter edges of the same noncrossing block.
+    if (magnitude(bendDirection) < 1e-9) bendDirection = { x: -chordDirection.y, y: chordDirection.x };
+    const handle = Math.min(155, Math.max(54, chordLength * 0.28));
+    const bowAmount = Math.min(36, depth * 0.24, chordLength * 0.06);
+    const bow = scale(bendDirection, bowAmount);
+    control1 = add(add(start, scale(chordDirection, handle)), bow);
+    control2 = add(add(end, scale(chordDirection, -handle)), bow);
   }
 
   return {

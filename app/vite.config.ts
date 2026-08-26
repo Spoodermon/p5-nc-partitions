@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? "/p5-nc-partitions/" : "/",
   build: {
     rollupOptions: {
       input: {
@@ -10,4 +11,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

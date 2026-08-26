@@ -1,6 +1,6 @@
 # Permutation Visualizer application
 
-This directory contains the canonical TypeScript, Vite, and SVG.js application for disc noncrossing partitions and annular noncrossing permutations. Legacy p5 files remain at the repository root as historical reference.
+This directory contains the canonical TypeScript, Vite, and SVG.js application for disc noncrossing partitions and annular noncrossing permutations. Historical p5 files are archived under `../legacy/p5/` and are not deployed.
 
 ## Install and run
 
@@ -14,6 +14,9 @@ Verification:
 
 ```bash
 npm test
+npm run test:slow
+npm run test:exhaustive
+npm run test:release
 npm run build
 npm run preview
 ```
@@ -115,11 +118,11 @@ The complete-permutation routing laboratory is available at:
 /dev/annular-routing.html
 ```
 
-The NCV-5 router first rejects input that is not mathematically annular-noncrossing. It extracts every directed cycle edge, searches 10 deterministic phase candidates over `[0, 2π/lcm(p,q))` (including `δ₀`), builds bounded candidate sets, and assigns them with deterministic backtracking. Same-boundary candidates use explicit excursion lanes; return edges prefer deeper lanes. Through candidates use bounded angular-bias families, and opposite directed edges in a two-cycle receive paired biases. Every non-singleton candidate uses a winding from `{-1,0,1}`; equivalent route plans are anchored to the NCV-4 layout angles, so no arbitrary global deck translation enters serialization.
+The production router first rejects input that is not mathematically annular-noncrossing. It extracts every directed cycle edge, searches 9 deterministic phase candidates, builds bounded candidate sets, and assigns them with deterministic backtracking. Same-boundary candidates use explicit excursion lanes; return edges prefer deeper lanes. Through candidates use bounded angular-bias families, and opposite directed edges in a two-cycle receive paired biases.
 
-Candidate pairs are checked with 49 deterministic samples per analytical route. The detector uses proper segment intersection and segment-to-segment minimum distance, including coincident regions. A radius-48 neighbourhood is ignored only around a shared mathematical endpoint; checking resumes immediately outside it. The default hard clearance is `0.1` viewBox units in the fixed `1000 × 1000` coordinate system and is independent of display pixels. Label proximity is reported as a soft warning.
+Candidate heuristics use 65 samples by default, but public sampling density never controls final admission. Every successful plan is independently resampled by adaptive subdivision of `pointAt(t)` to a 0.12 viewBox-unit flatness tolerance (maximum depth 12 and 4,096 segments per route), then checked for intersection, sustained overlap, and clearance. A radius-24 neighbourhood is ignored only around a shared mathematical endpoint. The default hard clearance is 7.5 viewBox units; requested hard clearance is never weakened. Label proximity is a soft warning.
 
-Search is bounded to 140 candidates per edge and 10,000 nodes per phase by default. A valid mathematical permutation that exhausts this finite search returns `search-limit-exceeded` or `no-collision-free-routing`; it is never reclassified as mathematically invalid and is never drawn with intersecting or straight-chord fallbacks. Route-plan serialization and all tie-breaking are deterministic.
+Search is bounded to 140 candidates per edge and 5,000 nodes for the entire routing call by default. Every phase, seam, principal/fallback pass, greedy attempt, and backtracking state shares that budget. Exhaustion returns `search-limit-exceeded`; policy exhaustion and verification failure have distinct reasons. Principal infeasibility is claimed only after the configured principal candidate space is exhausted without hitting the global budget. Route-plan serialization and tie-breaking are deterministic.
 
 The production renderer consumes the admitted routed diagram directly. Developer diagnostics remain confined to the laboratory.
 
@@ -135,4 +138,4 @@ The download icon serializes the current live SVG DOM in either mode. Export pre
 
 ## Known limitations
 
-The bounded router may report failure for larger annular permutations outside the exhaustive admission range. Publication presets, figure recipes, PDF/TikZ conversion, embedded publication fonts, and recurrence exposition remain deferred. NCV-7 is the dedicated visual-language and UX refinement branch, including the older disc aesthetic and post-route annular spline presentation.
+The bounded router may report failure for larger annular permutations outside the exhaustive admission range. Routing remains synchronous on the main thread; the production UI reports only `Routing…`, not fabricated stages. Publication presets, figure recipes, PDF/TikZ conversion, embedded publication fonts, recurrence exposition, and selected-edge route locking remain deferred.

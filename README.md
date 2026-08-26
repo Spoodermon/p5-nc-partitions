@@ -1,24 +1,38 @@
 # Permutation Visualizer
 
-The canonical TypeScript application in `app/` visualizes disc noncrossing partitions and annular noncrossing permutations. The root p5.js files remain as historical reference.
+The canonical production application is [`app/`](app/). It visualizes disc noncrossing partitions and oriented annular noncrossing permutations, their Kreweras complements, and exports the live diagram as SVG.
 
-**Play with it here:** https://spoodermon.github.io/p5-nc-partitions/
+The former p5 implementation is preserved only as historical source under [`legacy/p5/`](legacy/p5/); it is not built or deployed.
 
-## Instructions:
-1. Press `spacebar` to toggle between the partition, $\pi$ and its Kreweras complement $\mathrm{Kr}(\pi)$
-2. Press `enter` to input your own valid non-crossing partition, then press `enter` once again.
-
-**Note:** The non-crossing partition must be of valid form, in particular its input must be in cycle notation e.g. $(1\ 4)(2\ 3)(5\ 10)(6\ 7\ 8\ 9)$ where cycles are delimited by brackets `(`, `)` and elements in the brackets are delimited by spaces ` `. The program will verify whether the partition indeed has support on $[n]$ and check the non-crossing condition. 
-
-## Production application
-
-Disc input is a set partition, so block orientation canonicalizes. Annular input is an oriented permutation with separate positive-integer `p` and `q` boundary sizes. Both modes support interaction, presentation controls, and exact vector SVG export from the live figure.
+## Development
 
 ```sh
 cd app
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173/`. The annular geometry and routing laboratories remain under `/dev/` for diagnostics.
+Vite serves the application at `http://localhost:5173/`.
 
-Run `npm test` for the full mathematical and routing regression suite and `npm run build` for the production build. NCV-7 is reserved for visual-language and UX refinement.
+## Verification
+
+```sh
+cd app
+npm test                 # fast unit/integration tier
+npm run test:slow        # deterministic routing stress fixtures
+npm run test:exhaustive  # full p+q <= 5 routing sweep
+npm run test:release     # all tiers plus production build
+npm run build
+```
+
+Production limits are centralized in `app/src/config/limits.ts`: disc support is at most 400; `p` and `q` are each at most 20; annular total support is at most 24; input text is at most 16,384 characters. Limit failures are reported as infrastructure limits, not mathematical rejection.
+
+Routing defaults are centralized in `app/src/config/routingPolicy.ts`: 9 phase candidates, 140 candidates per edge, 5,000 global search nodes, 65 rendering samples, hard clearance 7.5, preferred clearance 14, shared-endpoint radius 24, and adaptive verification tolerance 0.12 with depth/segment bounds of 12/4,096.
+
+## Deployment
+
+GitHub Actions builds `app/` and deploys `app/dist/` to GitHub Pages. Production Vite builds use the project-site base `/p5-nc-partitions/`; local development uses `/`.
+
+## Current architectural debt
+
+Annular canonicalization and routing still run synchronously on the main thread. The UI therefore reports only an honest `Routing…` busy state. Moving those computations to a worker belongs in a dedicated follow-up, not this correctness hardening branch.

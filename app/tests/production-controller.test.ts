@@ -64,16 +64,13 @@ describe("production mathematical mode controller", () => {
     if (!accepted.ok) return;
     const identity = serializeRoutedAnnularDiagram(accepted.routed);
 
-    // Presentation state consumes the retained routed object and never calls this controller.
-    const presentationStates = [
-      { fill: false, arrows: false, width: 2, selected: null },
-      { fill: true, arrows: false, width: 2, selected: null },
-      { fill: true, arrows: true, width: 7, selected: accepted.routed.routes[0]?.edge.id },
-    ];
-    for (const state of presentationStates) {
-      expect(state).toBeDefined();
-      expect(serializeRoutedAnnularDiagram(accepted.routed)).toBe(identity);
-    }
+    const disc = parseNoncrossingPartition("(1)(2)");
+    if (!disc.ok) throw new Error(disc.error.kind);
+    const presentation = new ProductionSurfaceState(disc.value, accepted);
+    presentation.switchTo("annular");
+    presentation.switchTo("disc");
+    presentation.switchTo("annular");
+    expect(serializeRoutedAnnularDiagram(presentation.annular.routed)).toBe(identity);
     expect(router).toHaveBeenCalledOnce();
   });
 

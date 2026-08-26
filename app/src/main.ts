@@ -1,4 +1,5 @@
 import "./style.css";
+import { INPUT_LIMITS, parseBoundedPositiveInteger } from "./config/limits";
 import type { DirectedEdge } from "./geometry/disc";
 import { routeAnnularPermutation, type AnnularDirectedEdge } from "./geometry/annular-routing";
 import { annularKrewerasComplement, annularPermutationToString, classifiedAnnularCycles, krewerasComplement, mathErrorMessage, parseNoncrossingPartition, partitionToString, randomAnnularBlockNotation, randomNoncrossingPartition, type DiscPartition } from "./math";
@@ -201,7 +202,7 @@ function acceptDiscInput(input: string): boolean {
   state.discPartition = result.value;
   discN.value = String(result.value.n);
   discInput.value = partitionToString(state.discPartition);
-  selectedEdge = null; updateSelection(null); redraw(); return true;
+  selectedEdge = null; updateSelection(null); syncExampleSelector(); redraw(); return true;
 }
 
 function acceptAnnularInput(p: string, q: string, input: string, interpretation: AnnularInputInterpretation = annularInputInterpretation): boolean {
@@ -212,35 +213,39 @@ function acceptAnnularInput(p: string, q: string, input: string, interpretation:
   annularDisplayMode = "permutation";
   annularDisplayControls.forEach((control) => { control.checked = control.value === "permutation"; });
   annularP.value = String(result.permutation.p); annularQ.value = String(result.permutation.q);
-  selectedEdge = null; updateSelection(null); redraw(); return true;
+  selectedEdge = null; updateSelection(null); syncExampleSelector(); redraw(); return true;
 }
 
 function queueAnnularInput(p: string, q: string, input: string, fallbackInput?: string): void {
   const interpretation = annularInputInterpretation;
   annularMessage.dataset.state = "pending";
-  annularMessage.textContent = "Preparing annular diagram…";
+  annularMessage.textContent = "Routing…";
   routingProgress.hidden = false;
-  routingProgressLabel.textContent = "Validating boundary sizes and permutation notation…";
+  routingProgressLabel.textContent = "Routing…";
   window.setTimeout(() => {
-    routingProgressLabel.textContent = interpretation === "canonical-blocks"
-      ? "Auto-orienting block supports and searching phases, seams, and collision-free routes…"
-      : "Preserving cycle orientation and searching phases, seams, and collision-free routes…";
-    window.setTimeout(() => {
-      const accepted = acceptAnnularInput(p, q, input, interpretation);
-      if (!accepted && fallbackInput) {
-        routingProgressLabel.textContent = "The connected draw was too crowded; routing a fresh disconnected annular sample…";
-        annularInput.value = fallbackInput;
-        window.setTimeout(() => { acceptAnnularInput(p, q, fallbackInput, interpretation); routingProgress.hidden = true; }, 20);
-      } else routingProgress.hidden = true;
-    }, 20);
-  }, 20);
+    const accepted = acceptAnnularInput(p, q, input, interpretation);
+    if (!accepted && fallbackInput) { annularInput.value = fallbackInput; acceptAnnularInput(p, q, fallbackInput, interpretation); }
+    routingProgress.hidden = true;
+  }, 0);
 }
 
 function populateExamples(): void {
   exampleSelect.replaceChildren();
   const examples: readonly { id: string; label: string }[] = state.mode === "disc" ? EXAMPLES : ANNULAR_EXAMPLES;
   examples.forEach((example) => exampleSelect.add(new Option(example.label, example.id)));
-  exampleSelect.value = state.mode === "disc" ? "two-cycle" : "through-two-cycle";
+  exampleSelect.add(new Option("Custom", "custom"));
+  syncExampleSelector();
+}
+
+function syncExampleSelector(): void {
+  if (exampleSelect.options.length === 0) return;
+  if (state.mode === "disc") {
+    const notation = partitionToString(state.discPartition);
+    exampleSelect.value = EXAMPLES.find((example) => example.notation === notation)?.id ?? "custom";
+  } else {
+    const notation = state.annular.sourceNotation;
+    exampleSelect.value = ANNULAR_EXAMPLES.find((example) => example.p === state.annular.permutation.p && example.q === state.annular.permutation.q && example.notation === notation)?.id ?? "custom";
+  }
 }
 
 function showSurface(mode: SurfaceMode): void {
@@ -254,7 +259,7 @@ function showAnnularComplement(): void {
   const cached = annularComplementCache.get(annularCacheKey(state.annular));
   if (cached) { annularComplementState = cached; selectedEdge = null; updateSelection(null); redraw(); return; }
   routingProgress.hidden = false;
-  routingProgressLabel.textContent = "Computing Mingo–Nica annular Kreweras complement and routing its cycles…";
+  routingProgressLabel.textContent = "Routing…";
   window.setTimeout(() => {
     const permutation = annularKrewerasComplement(state.annular.permutation);
     const routed = routeAnnularPermutation(permutation);
@@ -287,6 +292,7 @@ function populatePalettes(): void {
 }
 
 exampleSelect.addEventListener("change", () => {
+  if (exampleSelect.value === "custom") return;
   if (state.mode === "disc") { const example = getExample(exampleSelect.value); discInput.value = example.notation; acceptDiscInput(example.notation); }
   else { const example = getAnnularExample(exampleSelect.value); annularP.value = String(example.p); annularQ.value = String(example.q); annularInput.value = example.notation; queueAnnularInput(String(example.p), String(example.q), example.notation); }
 });
@@ -296,14 +302,16 @@ annularInterpretationControls.forEach((control) => control.addEventListener("cha
   if (control.checked) annularInputInterpretation = control.value as AnnularInputInterpretation;
 }));
 discRandomButton.addEventListener("click", () => {
-  const n = Number(discN.value.trim());
-  if (!Number.isInteger(n) || n < 1) { discMessage.dataset.state = "error"; discMessage.textContent = "n must be a positive integer."; return; }
-  const partition = randomNoncrossingPartition(n);
+  const parsedN = parseBoundedPositiveInteger(discN.value, INPUT_LIMITS.discSupport);
+  if (!parsedN.ok) { discMessage.dataset.state = "error"; discMessage.textContent = `n must be an integer from 1 to ${INPUT_LIMITS.discSupport}.`; return; }
+  const partition = randomNoncrossingPartition(parsedN.value);
   discInput.value = partitionToString(partition); acceptDiscInput(discInput.value);
 });
 annularRandomButton.addEventListener("click", () => {
-  const p = Number(annularP.value.trim()); const q = Number(annularQ.value.trim());
-  if (!Number.isInteger(p) || p < 1 || !Number.isInteger(q) || q < 1) { annularMessage.dataset.state = "error"; annularMessage.textContent = "p and q must be positive integers."; return; }
+  const parsedP = parseBoundedPositiveInteger(annularP.value, INPUT_LIMITS.annularP);
+  const parsedQ = parseBoundedPositiveInteger(annularQ.value, INPUT_LIMITS.annularQ);
+  if (!parsedP.ok || !parsedQ.ok || parsedP.value + parsedQ.value > INPUT_LIMITS.annularTotalSupport) { annularMessage.dataset.state = "error"; annularMessage.textContent = `Use p ≤ ${INPUT_LIMITS.annularP}, q ≤ ${INPUT_LIMITS.annularQ}, and p+q ≤ ${INPUT_LIMITS.annularTotalSupport}.`; return; }
+  const p = parsedP.value; const q = parsedQ.value;
   const notation = randomAnnularBlockNotation(p, q, Math.random, 0.45);
   const fallback = randomAnnularBlockNotation(p, q, Math.random, 0);
   annularInputInterpretation = "canonical-blocks";

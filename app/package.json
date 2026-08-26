@@ -5,9 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && npm run verify:dist",
+    "verify:dist": "node scripts/verify-dist.mjs",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run --exclude '**/*.slow.test.ts' --exclude '**/*.exhaustive.test.ts' --exclude '**/*.benchmark.test.ts'",
+    "test:slow": "vitest run tests/*.slow.test.ts",
+    "test:exhaustive": "vitest run tests/*.exhaustive.test.ts",
+    "test:release": "npm test && npm run test:slow && npm run test:exhaustive && npm run build",
+    "benchmark": "vitest run tests/performance.benchmark.test.ts"
   },
   "dependencies": {
     "@svgdotjs/svg.js": "3.2.8"

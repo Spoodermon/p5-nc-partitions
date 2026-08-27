@@ -1,5 +1,5 @@
 import "./style.css";
-import { INPUT_LIMITS, parseBoundedPositiveInteger } from "./config/limits";
+import { INPUT_LIMITS, parseBoundedPositiveInteger, type BoundedPositiveIntegerError } from "./config/limits";
 import type { DirectedEdge } from "./geometry/disc";
 import { routeAnnularPermutation, type AnnularDirectedEdge } from "./geometry/annular-routing";
 import { annularKrewerasComplement, annularPermutationToString, classifiedAnnularCycles, krewerasComplement, mathErrorMessage, parseNoncrossingPartition, partitionToString, randomAnnularBlockNotation, randomNoncrossingPartition, type DiscPartition } from "./math";
@@ -17,6 +17,13 @@ type DiscDisplayMode = "partition" | "kreweras";
 type AnnularDisplayMode = "permutation" | "kreweras";
 type ColorMode = "palette" | "single" | "kind" | "custom";
 type SelectedEdge = { readonly surface: "disc"; readonly edge: DirectedEdge } | { readonly surface: "annular"; readonly edge: AnnularDirectedEdge } | null;
+
+function boundedIntegerErrorMessage(name: "n" | "p" | "q", reason: BoundedPositiveIntegerError, maximum: number): string {
+  if (reason === "input-too-long") return `${name} is too long; the supported maximum is ${INPUT_LIMITS.numericInputCharacters} characters.`;
+  if (reason === "too-large") return `This visualizer currently supports ${name} ≤ ${maximum}.`;
+  if (reason === "unsafe-integer") return `${name} is outside the supported safe integer range.`;
+  return `${name} is required and must be a positive decimal integer.`;
+}
 
 const figure = requireElement<HTMLDivElement>("figure");
 const figureShell = requireElement<HTMLDivElement>("figure-shell");
@@ -303,14 +310,16 @@ annularInterpretationControls.forEach((control) => control.addEventListener("cha
 }));
 discRandomButton.addEventListener("click", () => {
   const parsedN = parseBoundedPositiveInteger(discN.value, INPUT_LIMITS.discSupport);
-  if (!parsedN.ok) { discMessage.dataset.state = "error"; discMessage.textContent = `n must be an integer from 1 to ${INPUT_LIMITS.discSupport}.`; return; }
+  if (!parsedN.ok) { discMessage.dataset.state = "error"; discMessage.textContent = boundedIntegerErrorMessage("n", parsedN.reason, INPUT_LIMITS.discSupport); return; }
   const partition = randomNoncrossingPartition(parsedN.value);
   discInput.value = partitionToString(partition); acceptDiscInput(discInput.value);
 });
 annularRandomButton.addEventListener("click", () => {
   const parsedP = parseBoundedPositiveInteger(annularP.value, INPUT_LIMITS.annularP);
   const parsedQ = parseBoundedPositiveInteger(annularQ.value, INPUT_LIMITS.annularQ);
-  if (!parsedP.ok || !parsedQ.ok || parsedP.value + parsedQ.value > INPUT_LIMITS.annularTotalSupport) { annularMessage.dataset.state = "error"; annularMessage.textContent = `Use p ≤ ${INPUT_LIMITS.annularP}, q ≤ ${INPUT_LIMITS.annularQ}, and p+q ≤ ${INPUT_LIMITS.annularTotalSupport}.`; return; }
+  if (!parsedP.ok) { annularMessage.dataset.state = "error"; annularMessage.textContent = boundedIntegerErrorMessage("p", parsedP.reason, INPUT_LIMITS.annularP); return; }
+  if (!parsedQ.ok) { annularMessage.dataset.state = "error"; annularMessage.textContent = boundedIntegerErrorMessage("q", parsedQ.reason, INPUT_LIMITS.annularQ); return; }
+  if (parsedP.value + parsedQ.value > INPUT_LIMITS.annularTotalSupport) { annularMessage.dataset.state = "error"; annularMessage.textContent = `Use p ≤ ${INPUT_LIMITS.annularP}, q ≤ ${INPUT_LIMITS.annularQ}, and p+q ≤ ${INPUT_LIMITS.annularTotalSupport}.`; return; }
   const p = parsedP.value; const q = parsedQ.value;
   const notation = randomAnnularBlockNotation(p, q, Math.random, 0.45);
   const fallback = randomAnnularBlockNotation(p, q, Math.random, 0);

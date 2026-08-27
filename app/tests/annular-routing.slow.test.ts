@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ROUTING_POLICY } from "../src/config/routingPolicy";
 import {
   analyzeRoutePair,
   annularCycleFillRegions,
@@ -168,6 +169,7 @@ describe("global annular routing", () => {
       ["(1)(2)(3)(4 5 6)(7)", 3, 4],
       ["(1)(2)(3)(4 5 6 7)(8)", 3, 5],
       ["(1 4 5)(2)(3)(6)", 3, 3],
+      ["(1 4 5 6)(2)(3)", 3, 3],
     ] as const) {
       const result = routeAnnularPermutation(parsed(text, p, q));
       expect(result.isRoutable, `${text}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
@@ -176,10 +178,6 @@ describe("global annular routing", () => {
       expect(regions).toHaveLength(result.corridors.length);
       expect(regions.every((region) => region.area > 1)).toBe(true);
     }
-    // This legacy fixture makes the first and returning through edges touch
-    // in the 8-to-24 endpoint annulus. Exact zero-tolerance contact is no
-    // longer hidden by discarding microscopic clipped intervals.
-    expect(routeAnnularPermutation(parsed("(1 4 5 6)(2)(3)", 3, 3)).isRoutable).toBe(false);
   }, 30_000);
 
   it("detects intersections and orders segment clearances", () => {
@@ -370,7 +368,7 @@ describe("global annular routing", () => {
       let result = routeAnnularPermutation(created.value, {
         phaseCandidateCount: 2,
         sampleCount: 25,
-        maxCandidatesPerEdge: 140,
+        maxCandidatesPerEdge: ROUTING_POLICY.maximumCandidatesPerEdge,
         maxSearchNodes: 2_000,
       });
       if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
@@ -395,7 +393,7 @@ describe("global annular routing", () => {
       let result = routeAnnularPermutation(created.value, {
         phaseCandidateCount: 2,
         sampleCount: 25,
-        maxCandidatesPerEdge: 140,
+        maxCandidatesPerEdge: ROUTING_POLICY.maximumCandidatesPerEdge,
         maxSearchNodes: 2_000,
       });
       if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
@@ -410,7 +408,7 @@ describe("global annular routing", () => {
   it("preserves the mixed (2,3) through-cycle fallback", () => {
     const created = annularPermutationFromImages(2, 3, [2, 5, 3, 1, 4]);
     if (!created.ok) throw new Error(created.error.kind);
-    const result = routeAnnularPermutation(created.value, { phaseCandidateCount: 2, sampleCount: 25, maxCandidatesPerEdge: 140, maxSearchNodes: 2_000 });
+    const result = routeAnnularPermutation(created.value, { phaseCandidateCount: 2, sampleCount: 25, maxCandidatesPerEdge: ROUTING_POLICY.maximumCandidatesPerEdge, maxSearchNodes: 2_000 });
     expect(result.isRoutable, JSON.stringify(result.diagnostics)).toBe(true);
     if (result.isRoutable) {
       expect(result.diagnostics.hardCollisionCount).toBe(0);

@@ -52,6 +52,7 @@ export interface RoutingMetrics {
   readonly labelWarnings: readonly string[];
   readonly searchedPhaseCount: number;
   readonly searchedCandidateCount: number;
+  readonly materializedRouteCandidateCount?: number;
   readonly attemptedBundleCount?: number;
   readonly rejectedBundleCount?: number;
   readonly materializedSamplePointCount?: number;
@@ -131,6 +132,7 @@ export interface CycleRouteBundle {
   readonly routes: readonly AnnularRouteCandidate[];
   readonly score: number;
   readonly key: string;
+  readonly internallyValidated?: boolean;
   readonly nonPrincipalThroughCount?: number;
   readonly throughAngularTravel?: number;
   readonly geometricLength?: number;

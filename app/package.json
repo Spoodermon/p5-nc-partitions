@@ -13,7 +13,7 @@
     "test:exhaustive": "vitest run tests/*.exhaustive.test.ts",
     "test:release": "npm test && npm run test:slow && npm run test:browser && npm run benchmark && npm run test:exhaustive && npm run build",
     "test:browser": "playwright test",
-    "benchmark": "vitest run --disableConsoleIntercept tests/performance.benchmark.test.ts"
+    "benchmark": "vitest run --disableConsoleIntercept tests/*.benchmark.test.ts"
   },
   "dependencies": {
     "@svgdotjs/svg.js": "3.2.8"

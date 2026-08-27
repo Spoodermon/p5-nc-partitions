@@ -1,6 +1,53 @@
 import type { Point } from "../annular";
 import type { AnnularRouteCandidate, RoutePairDiagnostic } from "./types";
 
+function isFinitePoint(point: unknown): point is Point {
+  if (typeof point !== "object" || point === null) return false;
+  try {
+    const candidate = point as { readonly x?: unknown; readonly y?: unknown };
+    return typeof candidate.x === "number" && Number.isFinite(candidate.x)
+      && typeof candidate.y === "number" && Number.isFinite(candidate.y);
+  } catch {
+    return false;
+  }
+}
+
+function isFinitePolyline(samples: unknown): samples is readonly Point[] {
+  if (!Array.isArray(samples) || samples.length < 2) return false;
+  for (let index = 0; index < samples.length; index += 1) {
+    if (!isFinitePoint(samples[index])) return false;
+  }
+  return true;
+}
+
+export function hasFiniteRouteSamples(candidate: unknown): candidate is AnnularRouteCandidate {
+  if (typeof candidate !== "object" || candidate === null) return false;
+  try {
+    return isFinitePolyline((candidate as { readonly samples?: unknown }).samples);
+  } catch {
+    return false;
+  }
+}
+
+function candidateEdgeId(candidate: unknown, fallback: string): string {
+  try {
+    const edgeId = (candidate as { readonly edge?: { readonly id?: unknown } } | null)?.edge?.id;
+    return typeof edgeId === "string" ? edgeId : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function invalidPairDiagnostic(first: unknown, second: unknown): RoutePairDiagnostic {
+  return Object.freeze({
+    firstEdgeId: candidateEdgeId(first, "<invalid-first-edge>"),
+    secondEdgeId: candidateEdgeId(second, "<invalid-second-edge>"),
+    clearance: 0,
+    intersects: true,
+    coincident: false,
+  });
+}
+
 function cross(a: Point, b: Point, c: Point): number {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
@@ -35,13 +82,15 @@ function boxesFar(a: Point, b: Point, c: Point, d: Point, margin: number): boole
 }
 
 export function segmentDistance(a: Point, b: Point, c: Point, d: Point): number {
+  if (![a, b, c, d].every(isFinitePoint)) return 0;
   if (properIntersection(a, b, c, d)) return 0;
-  return Math.min(
+  const distance = Math.min(
     pointSegmentDistance(a, c, d),
     pointSegmentDistance(b, c, d),
     pointSegmentDistance(c, a, b),
     pointSegmentDistance(d, a, b),
   );
+  return Number.isFinite(distance) ? distance : 0;
 }
 
 function sharedLabels(first: AnnularRouteCandidate, second: AnnularRouteCandidate): readonly number[] {
@@ -119,13 +168,12 @@ function clippedRouteSegments(
   return result;
 }
 
-export function analyzeRoutePair(
+function analyzeFiniteRoutePair(
   first: AnnularRouteCandidate,
   second: AnnularRouteCandidate,
-  commonEndpointRadius = 18,
-  approximationTolerance = 0,
+  commonEndpointRadius: number,
+  approximationTolerance: number,
 ): RoutePairDiagnostic {
-  if (!Number.isFinite(commonEndpointRadius) || commonEndpointRadius < 0 || !Number.isFinite(approximationTolerance) || approximationTolerance < 0) throw new RangeError("endpoint radius and approximation tolerance must be finite and nonnegative");
   const labels = sharedLabels(first, second);
   const sharedPoints = labels.map((label) => {
     if (label === first.edge.startLabel) return first.samples[0] as Point;
@@ -167,7 +215,22 @@ export function analyzeRoutePair(
   });
 }
 
-export function routesConflict(
+export function analyzeRoutePair(
+  first: AnnularRouteCandidate,
+  second: AnnularRouteCandidate,
+  commonEndpointRadius = 18,
+  approximationTolerance = 0,
+): RoutePairDiagnostic {
+  if (!Number.isFinite(commonEndpointRadius) || commonEndpointRadius < 0 || !Number.isFinite(approximationTolerance) || approximationTolerance < 0) throw new RangeError("endpoint radius and approximation tolerance must be finite and nonnegative");
+  if (!hasFiniteRouteSamples(first) || !hasFiniteRouteSamples(second)) return invalidPairDiagnostic(first, second);
+  try {
+    return analyzeFiniteRoutePair(first, second, commonEndpointRadius, approximationTolerance);
+  } catch {
+    return invalidPairDiagnostic(first, second);
+  }
+}
+
+function finiteRoutesConflict(
   first: AnnularRouteCandidate,
   second: AnnularRouteCandidate,
   hardClearance: number,
@@ -191,7 +254,7 @@ export function routesConflict(
     for (const [secondStart, secondEnd] of secondSegments) {
       if (boxesFar(firstStart, firstEnd, secondStart, secondEnd, hardClearance)) continue;
       const distance = segmentDistance(firstStart, firstEnd, secondStart, secondEnd);
-      if (distance < hardClearance) return true;
+      if (distance === 0 || distance < hardClearance) return true;
       if (distance <= 0.2 && Math.abs(cross(firstStart, firstEnd, secondStart)) < 0.5 && Math.abs(cross(firstStart, firstEnd, secondEnd)) < 0.5) {
         coincidentSegments += 1;
         if (coincidentSegments >= 2) return true;
@@ -199,4 +262,20 @@ export function routesConflict(
     }
   }
   return false;
+}
+
+export function routesConflict(
+  first: AnnularRouteCandidate,
+  second: AnnularRouteCandidate,
+  hardClearance: number,
+  commonEndpointRadius: number,
+): boolean {
+  if (!Number.isFinite(hardClearance) || hardClearance < 0
+    || !Number.isFinite(commonEndpointRadius) || commonEndpointRadius < 0
+    || !hasFiniteRouteSamples(first) || !hasFiniteRouteSamples(second)) return true;
+  try {
+    return finiteRoutesConflict(first, second, hardClearance, commonEndpointRadius);
+  } catch {
+    return true;
+  }
 }

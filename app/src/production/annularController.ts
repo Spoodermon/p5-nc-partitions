@@ -140,6 +140,7 @@ function boundaryValue(text: string, name: "p" | "q"): number | AnnularInputErro
   const maximum = name === "p" ? INPUT_LIMITS.annularP : INPUT_LIMITS.annularQ;
   const parsed = parseBoundedPositiveInteger(text, maximum);
   if (parsed.ok) return parsed.value;
+  if (parsed.reason === "input-too-long") return { kind: "input-limit", message: `${name} is too long; the supported maximum is ${INPUT_LIMITS.numericInputCharacters} characters.` };
   if (parsed.reason === "too-large") return { kind: "input-limit", message: `This visualizer currently supports ${name} ≤ ${maximum} and p+q ≤ ${INPUT_LIMITS.annularTotalSupport}.` };
   if (parsed.reason === "unsafe-integer") return { kind: "input-limit", message: `${name} is outside the supported safe integer range.` };
   return { kind: "syntax-domain", message: `${name} is required and must be a positive decimal integer.` };
@@ -177,7 +178,13 @@ export function processAnnularInput(
 
   const parsed = parseAnnularPermutation(notation, p, q);
   if (!parsed.ok) {
-    return { ok: false, error: { kind: "syntax-domain", message: annularParseErrorMessage(parsed.error, p, q) } };
+    const kind: AnnularInputErrorKind = parsed.error.kind === "input-too-long"
+      || parsed.error.kind === "unsafe-integer"
+      || parsed.error.kind === "label-too-large"
+      || parsed.error.kind === "boundary-size-too-large"
+      ? "input-limit"
+      : "syntax-domain";
+    return { ok: false, error: { kind, message: annularParseErrorMessage(parsed.error, p, q) } };
   }
 
   const sourceNotation = annularPermutationToString(parsed.value);

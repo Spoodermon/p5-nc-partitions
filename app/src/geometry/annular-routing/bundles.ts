@@ -22,43 +22,78 @@ const DEFAULT_STROKE_WIDTH = 4;
 export interface CandidateGenerationBudget {
   readonly routeLimit: number;
   readonly pointLimit: number;
+  readonly validationLimit: number;
   materializedRoutes: number;
   materializedPoints: number;
   attemptedBundles: number;
   rejectedBundles: number;
+  validationChecks: number;
   exhausted: boolean;
+  validationExhausted: boolean;
 }
 
 export function createCandidateGenerationBudget(
   routeLimit: number = ROUTING_POLICY.maxMaterializedRouteCandidates,
   pointLimit: number = ROUTING_POLICY.maxMaterializedSamplePoints,
+  validationLimit: number = ROUTING_POLICY.maxBundleValidationChecks,
 ): CandidateGenerationBudget {
-  const boundedRouteLimit = Number.isFinite(routeLimit)
-    ? Math.min(ROUTING_POLICY.maxCallMaterializedRouteCandidates, Math.max(0, Math.floor(routeLimit)))
-    : ROUTING_POLICY.maxMaterializedRouteCandidates;
-  const boundedPointLimit = Number.isFinite(pointLimit)
-    ? Math.min(ROUTING_POLICY.maxCallMaterializedSamplePoints, Math.max(0, Math.floor(pointLimit)))
-    : ROUTING_POLICY.maxMaterializedSamplePoints;
+  const boundedLimit = (value: number, maximum: number): number => Number.isFinite(value)
+    ? Math.min(maximum, Math.max(0, Math.floor(value)))
+    : 0;
+  const boundedRouteLimit = boundedLimit(routeLimit, ROUTING_POLICY.maxCallMaterializedRouteCandidates);
+  const boundedPointLimit = boundedLimit(pointLimit, ROUTING_POLICY.maxCallMaterializedSamplePoints);
+  const boundedValidationLimit = boundedLimit(validationLimit, ROUTING_POLICY.maxBundleValidationChecks);
   return {
     routeLimit: boundedRouteLimit,
     pointLimit: boundedPointLimit,
+    validationLimit: boundedValidationLimit,
     materializedRoutes: 0,
     materializedPoints: 0,
     attemptedBundles: 0,
     rejectedBundles: 0,
-    exhausted: false,
+    validationChecks: 0,
+    exhausted: boundedRouteLimit === 0 || boundedPointLimit === 0,
+    validationExhausted: boundedValidationLimit === 0,
   };
 }
 
+function budgetHasValidShape(budget: CandidateGenerationBudget): boolean {
+  const values = [
+    budget.routeLimit,
+    budget.pointLimit,
+    budget.validationLimit,
+    budget.materializedRoutes,
+    budget.materializedPoints,
+    budget.attemptedBundles,
+    budget.rejectedBundles,
+    budget.validationChecks,
+  ];
+  return values.every((value) => Number.isSafeInteger(value) && value >= 0)
+    && budget.routeLimit <= ROUTING_POLICY.maxCallMaterializedRouteCandidates
+    && budget.pointLimit <= ROUTING_POLICY.maxCallMaterializedSamplePoints
+    && budget.validationLimit <= ROUTING_POLICY.maxBundleValidationChecks
+    && budget.materializedRoutes <= budget.routeLimit
+    && budget.materializedPoints <= budget.pointLimit
+    && budget.attemptedBundles <= budget.materializedRoutes
+    && budget.validationChecks <= budget.validationLimit
+    && budget.rejectedBundles <= budget.attemptedBundles
+    && typeof budget.exhausted === "boolean"
+    && typeof budget.validationExhausted === "boolean";
+}
+
 function reserveCandidateBundle(budget: CandidateGenerationBudget, routeCount: number, sampleCount: number): boolean {
-  if (![budget.materializedRoutes, budget.materializedPoints, budget.attemptedBundles, budget.rejectedBundles].every((value) => Number.isFinite(value) && value >= 0)) {
+  if (budget.exhausted || budget.validationExhausted) return false;
+  if (!budgetHasValidShape(budget)
+    || !Number.isSafeInteger(routeCount) || routeCount < 1
+    || !Number.isSafeInteger(sampleCount) || sampleCount < 2) {
     budget.exhausted = true;
+    budget.validationExhausted = true;
     return false;
   }
   const pointCount = routeCount * sampleCount;
-  const routeLimit = Math.min(budget.routeLimit, ROUTING_POLICY.maxCallMaterializedRouteCandidates);
-  const pointLimit = Math.min(budget.pointLimit, ROUTING_POLICY.maxCallMaterializedSamplePoints);
-  if (budget.materializedRoutes + routeCount > routeLimit || budget.materializedPoints + pointCount > pointLimit) {
+  if (!Number.isSafeInteger(pointCount)
+    || budget.materializedRoutes + routeCount > budget.routeLimit
+    || budget.materializedPoints + pointCount > budget.pointLimit) {
     budget.exhausted = true;
     return false;
   }
@@ -68,30 +103,77 @@ function reserveCandidateBundle(budget: CandidateGenerationBudget, routeCount: n
   return true;
 }
 
-function routesAreInternallyValid(routes: readonly AnnularRouteCandidate[], hardClearance: number, endpointRadius: number): boolean {
+export function consumeCandidateValidationCheck(budget: CandidateGenerationBudget): boolean {
+  if (budget.validationExhausted) return false;
+  if (!budgetHasValidShape(budget)) {
+    budget.exhausted = true;
+    budget.validationExhausted = true;
+    return false;
+  }
+  if (budget.validationChecks >= budget.validationLimit) {
+    budget.validationExhausted = true;
+    return false;
+  }
+  budget.validationChecks += 1;
+  return true;
+}
+
+function routesAreInternallyValid(
+  routes: readonly AnnularRouteCandidate[],
+  hardClearance: number,
+  endpointRadius: number,
+  budget: CandidateGenerationBudget,
+): boolean {
   for (let first = 0; first < routes.length; first += 1) for (let second = first + 1; second < routes.length; second += 1) {
+    if (!consumeCandidateValidationCheck(budget)) return false;
     if (routesConflict(routes[first] as AnnularRouteCandidate, routes[second] as AnnularRouteCandidate, hardClearance, endpointRadius)) return false;
   }
   return true;
 }
 
-function boundedCandidates<T>(ordered: readonly T[], limit: number, reserve?: (value: T) => boolean): readonly T[] {
+function boundedCandidates<T>(ordered: readonly T[], limit: number, reserve?: (value: T) => boolean, coverFullRange = reserve === undefined): readonly T[] {
   if (ordered.length <= limit) return ordered;
+  const coverageOrder = (length: number): number[] => {
+    if (length <= 0) return [];
+    const result: number[] = [length - 1];
+    const intervals: Array<readonly [number, number]> = [[0, length - 1]];
+    for (let intervalIndex = 0; intervalIndex < intervals.length; intervalIndex += 1) {
+      const [from, to] = intervals[intervalIndex] as readonly [number, number];
+      if (to - from <= 1) continue;
+      const middle = Math.floor((from + to) / 2);
+      result.push(middle);
+      intervals.push([from, middle], [middle, to]);
+    }
+    return result;
+  };
+  const reserved = reserve
+    ? ordered.flatMap((value, index) => reserve(value) ? [index] : [])
+    : [];
+  const reservedOrder = coverageOrder(reserved.length).map((index) => reserved[index] as number);
+  const coverage = coverFullRange ? coverageOrder(ordered.length) : [];
+  const ranked: number[] = [];
   const selected = new Set<number>();
-  if (reserve) ordered.forEach((value, index) => { if (reserve(value)) selected.add(index); });
-  if (selected.size > limit) {
-    const reserved = [...selected]; selected.clear();
-    for (let index = 0; index < limit; index += 1) selected.add(reserved[Math.round(index * (reserved.length - 1) / Math.max(1, limit - 1))] as number);
+  let preferredIndex = 0;
+  let reservedIndex = 0;
+  let coverageIndex = 0;
+  const add = (index: number | undefined): void => {
+    if (index === undefined || index < 0 || index >= ordered.length || selected.has(index)) return;
+    selected.add(index);
+    ranked.push(index);
+  };
+  // A fixed 3:1[:1] interleave gives score, feasibility, and range coverage
+  // deterministic ranks. Since the rank order is independent of `limit`, a
+  // larger candidate cap is a true superset of every smaller frontier.
+  while (ranked.length < limit) {
+    const before = ranked.length;
+    for (let count = 0; count < (reserve && coverFullRange ? 2 : 3); count += 1) add(preferredIndex++);
+    if (reserve) add(reservedOrder[reservedIndex++]);
+    if (coverFullRange) add(coverage[coverageIndex++]);
+    if (ranked.length === before) {
+      while (preferredIndex < ordered.length) add(preferredIndex++);
+    }
   }
-  const preferredTarget = Math.max(1, Math.floor(limit * 0.75));
-  for (let index = 0; index < ordered.length && selected.size < preferredTarget; index += 1) selected.add(index);
-  const coverageTarget = limit - selected.size;
-  for (let index = 0; index < coverageTarget; index += 1) {
-    const fraction = coverageTarget === 1 ? 1 : index / (coverageTarget - 1);
-    selected.add(Math.round(fraction * (ordered.length - 1)));
-  }
-  for (let index = 0; index < ordered.length && selected.size < limit; index += 1) selected.add(index);
-  return [...selected].sort((a, b) => a - b).map((index) => ordered[index] as T);
+  return ranked.slice(0, limit).sort((a, b) => a - b).map((index) => ordered[index] as T);
 }
 
 export function principalThroughWinding(startAngle: number, endAngle: number): number {
@@ -437,7 +519,7 @@ function pureBundles(
       preferredExcursion * 0.66,
       midpointExcursion, 0.14, 0.19, 0.25, 0.1, 0.08, 0.05, 0.03,
     ].map((value) => Number(value.toFixed(4))))];
-    const specs = excursions.flatMap((excursion) => [0.06, -0.06, 0.1, -0.1, 0.14, -0.14, 0.19, -0.19, 0.24, -0.24].map((angularBias) => {
+    const specs = excursions.flatMap((excursion) => [0.08, -0.08, 0.1, -0.1, 0.14, -0.14, 0.19, -0.19, 0.24, -0.24].map((angularBias) => {
       const localScore = Math.abs(excursion - preferredExcursion) + Math.abs(Math.abs(angularBias) - preferredBias) * 0.2;
       return { excursion, angularBias, localScore, key: `singleton:${excursion}:${angularBias}` };
     }));
@@ -566,12 +648,45 @@ function throughBundles(
     .filter((combination, index, all) => all.findIndex((candidate) => candidate.radialVariant === combination.radialVariant && candidate.bundleBias === combination.bundleBias && candidate.pairSeparation === combination.pairSeparation) === index);
   const specifications = activeCombinations.flatMap(({ radialVariant, bundleBias, pairSeparation }) =>
     activeLiftVariants.map((liftVariant) => ({ radialVariant, bundleBias, pairSeparation, liftVariant })));
+  // A centred radial-2 route with a single coherent deck adjustment is the
+  // short, high-clearance representative for crowded long through cycles.
+  // Keep both deck directions in the smallest frontier so the call-wide
+  // materialization budget is not spent on thousands of rejected low-radial
+  // variants before this basic family is reached.
+  const centralDeckFanSpecifications = specifications.filter(({ radialVariant, bundleBias, pairSeparation, liftVariant }) =>
+    radialVariant === 2
+    && bundleBias === 0
+    && pairSeparation === 0.1
+    && (liftVariant.key === "-1" || liftVariant.key === "1"));
+  // Crowded four-cycles often need a local deck adjustment together with the
+  // radial-5 central collar. Put those moderate-separation specifications on
+  // the bounded frontier before spending attempts on more extreme biases.
+  const principalFanSpecifications = specifications.filter(({ radialVariant, bundleBias, pairSeparation, liftVariant }) =>
+    radialVariant === 0 && Math.abs(bundleBias) === 0.75 && pairSeparation === 0.1 && liftVariant.key === "principal");
+  const neutralDeckFanSpecifications = specifications.filter(({ radialVariant, bundleBias, pairSeparation, liftVariant }) =>
+    (radialVariant === 0 || radialVariant === 2) && bundleBias === 0 && pairSeparation === 0.28 && (liftVariant.key === "-1" || liftVariant.key === "1"));
+  const crowdedSpecifications = corridor.cycle.length === 4
+    ? specifications.filter(({ radialVariant, bundleBias, pairSeparation, liftVariant }) =>
+      radialVariant === 5
+      && Math.abs(bundleBias) >= 1.1
+      && pairSeparation === 0.28
+      && liftVariant.key.startsWith("0:"))
+    : [];
+  const preferredSet = new Set([...centralDeckFanSpecifications, ...principalFanSpecifications, ...neutralDeckFanSpecifications, ...crowdedSpecifications]);
+  const orderedSpecifications = [
+    ...centralDeckFanSpecifications,
+    ...principalFanSpecifications,
+    ...neutralDeckFanSpecifications,
+    ...crowdedSpecifications,
+    ...specifications.filter((specification) => !preferredSet.has(specification)),
+  ];
   // Rejected through specifications count against a fixed attempt allowance;
   // the retained frontier remains capped independently at maxBundles.
-  const selectedSpecifications = boundedCandidates(specifications, maxBundles * 4, ({ bundleBias, pairSeparation }) =>
-    Math.abs(bundleBias) >= 1.9 && pairSeparation === 0.1);
+  const selectedSpecifications = boundedCandidates(orderedSpecifications, maxBundles * 2, ({ bundleBias, pairSeparation }) =>
+    Math.abs(bundleBias) >= 1.9 && pairSeparation === 0.1, true);
   for (const { radialVariant, bundleBias, pairSeparation, liftVariant } of selectedSpecifications) {
       if (bundles.length >= maxBundles) break;
+      if (budget.validationExhausted || budget.validationChecks >= budget.validationLimit) break;
       if (!reserveCandidateBundle(budget, edges.length, sampleCount)) break;
       const lifts = liftVariant.lifts ?? liftRecord(layout, seam, corridor, liftVariant.uniform, liftVariant.local);
         const routes = edges.map((edge) => {
@@ -586,13 +701,14 @@ function throughBundles(
         const nonPrincipalThroughCount = routes.filter((route) => route.isPrincipalThroughRoute === false).length;
         const throughAngularTravel = routes.reduce((sum, route) => sum + (route.principalWinding === undefined ? 0 : Math.abs(route.route.angularDisplacement)), 0);
         const geometricLength = routes.reduce((sum, route) => sum + (route.routeLength ?? 0), 0);
-        if ((homotopyPolicy === "all" || (homotopyPolicy === "principal-only" ? nonPrincipalThroughCount === 0 : nonPrincipalThroughCount > 0)) && routesAreInternallyValid(routes, hardClearance, endpointRadius)) bundles.push(Object.freeze({
+        if ((homotopyPolicy === "all" || (homotopyPolicy === "principal-only" ? nonPrincipalThroughCount === 0 : nonPrincipalThroughCount > 0)) && routesAreInternallyValid(routes, hardClearance, endpointRadius, budget)) bundles.push(Object.freeze({
           cycleIndex: corridor.cycleIndex,
           corridor,
           vertexLifts: lifts,
           routes: Object.freeze(routes),
           score: routes.reduce((sum, route) => sum + route.localScore, 0),
           key,
+          internallyValidated: true,
           nonPrincipalThroughCount,
           throughAngularTravel,
           geometricLength,
@@ -604,7 +720,7 @@ function throughBundles(
     || (a.throughAngularTravel ?? 0) - (b.throughAngularTravel ?? 0)
     || (a.geometricLength ?? 0) - (b.geometricLength ?? 0)
     || a.score - b.score
-    || a.key.localeCompare(b.key)), maxBundles, (bundle) => /:(?:-?1\.9|-?2\.4):0\.1$/.test(bundle.key)));
+    || a.key.localeCompare(b.key)), maxBundles, (bundle) => /:(?:-?1\.9|-?2\.4):0\.1$/.test(bundle.key), true));
 }
 
 export function generateCycleBundles(
@@ -620,7 +736,7 @@ export function generateCycleBundles(
   generationBudget: CandidateGenerationBudget = createCandidateGenerationBudget(),
 ): readonly CycleRouteBundle[] {
   if (!Number.isInteger(sampleCount) || sampleCount < 2 || sampleCount > ROUTING_POLICY.maximumRenderSampleCount) throw new RangeError(`sample count must be an integer in [2,${ROUTING_POLICY.maximumRenderSampleCount}]`);
-  if (!Number.isInteger(maxCandidatesPerEdge) || maxCandidatesPerEdge < 1 || maxCandidatesPerEdge > 10_000) throw new RangeError("maximum candidates per edge must be an integer in [1,10000]");
+  if (!Number.isInteger(maxCandidatesPerEdge) || maxCandidatesPerEdge < 1 || maxCandidatesPerEdge > ROUTING_POLICY.maximumCandidatesPerEdge) throw new RangeError(`maximum candidates per edge must be an integer in [1,${ROUTING_POLICY.maximumCandidatesPerEdge}]`);
   const maxBundles = Math.max(1, Math.floor(maxCandidatesPerEdge));
   return corridor.kind === "through"
     ? throughBundles(layout, seam, corridor, edges, sampleCount, throughHomotopyPolicy, maxBundles, hardClearance, endpointRadius, generationBudget)

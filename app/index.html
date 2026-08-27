@@ -22,9 +22,9 @@
         <div id="disc-controls" class="mode-inputs">
           <form id="disc-form" class="notation-form">
             <label for="disc-input">Partition</label>
-            <input id="disc-input" type="text" spellcheck="false" autocomplete="off" aria-describedby="disc-message" />
+            <input id="disc-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="disc-message" />
             <button id="disc-random-button" class="secondary-button" type="button">Random NC</button>
-            <label for="disc-n">n<input id="disc-n" class="size-input" type="text" inputmode="numeric" autocomplete="off" /></label>
+            <label for="disc-n">n<input id="disc-n" class="size-input" type="text" inputmode="numeric" maxlength="32" autocomplete="off" /></label>
             <button type="submit">Render</button>
           </form>
           <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="disc-display-mode" value="partition" checked /> π</label><label><input type="radio" name="disc-display-mode" value="kreweras" /> Kr(π)</label></fieldset>
@@ -33,10 +33,10 @@
 
         <div id="annular-controls" class="mode-inputs" hidden>
           <form id="annular-form" class="annular-form">
-            <label class="annular-notation" for="annular-input">Permutation<input id="annular-input" type="text" spellcheck="false" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label class="annular-notation" for="annular-input">Permutation<input id="annular-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="annular-message" /></label>
             <button id="annular-random-button" class="secondary-button" type="button">Random ANC</button>
-            <label for="annular-p">p<input id="annular-p" type="text" inputmode="numeric" autocomplete="off" aria-describedby="annular-message" /></label>
-            <label for="annular-q">q<input id="annular-q" type="text" inputmode="numeric" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label for="annular-p">p<input id="annular-p" type="text" inputmode="numeric" maxlength="32" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label for="annular-q">q<input id="annular-q" type="text" inputmode="numeric" maxlength="32" autocomplete="off" aria-describedby="annular-message" /></label>
             <button type="submit">Render</button>
           </form>
           <fieldset class="interpretation-toggle"><legend>Interpret input as</legend><label><input type="radio" name="annular-input-interpretation" value="strict-permutation" checked /> Strict permutation</label><label><input type="radio" name="annular-input-interpretation" value="canonical-blocks" /> Canonical block set / auto-orient</label></fieldset>

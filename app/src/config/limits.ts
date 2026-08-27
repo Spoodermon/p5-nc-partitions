@@ -6,16 +6,18 @@ export const INPUT_LIMITS = Object.freeze({
   annularTotalSupport: 24,
   maximumLabel: 400,
   inputCharacters: 16_384,
+  numericInputCharacters: 32,
   maxOrientationCandidates: 50_000,
 });
 
-export type BoundedPositiveIntegerError = "required" | "invalid-integer" | "unsafe-integer" | "too-large";
+export type BoundedPositiveIntegerError = "required" | "invalid-integer" | "unsafe-integer" | "too-large" | "input-too-long";
 
 /** Parse a decimal positive integer without first converting an unbounded token. */
 export function parseBoundedPositiveInteger(
   text: string,
   maximum: number,
 ): { readonly ok: true; readonly value: number } | { readonly ok: false; readonly reason: BoundedPositiveIntegerError } {
+  if (text.length > INPUT_LIMITS.numericInputCharacters) return { ok: false, reason: "input-too-long" };
   const trimmed = text.trim();
   if (trimmed.length === 0) return { ok: false, reason: "required" };
   if (!/^[+]?[0-9]+$/.test(trimmed)) return { ok: false, reason: "invalid-integer" };

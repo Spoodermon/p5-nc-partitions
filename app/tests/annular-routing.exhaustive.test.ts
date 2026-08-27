@@ -17,11 +17,10 @@ describe("release exhaustive annular routing", () => {
         if (!created.ok) throw new Error(created.error.kind);
         if (!isAnnularNoncrossing(created.value)) continue;
         valid += 1;
-        let result = routeAnnularPermutation(created.value, { phaseCandidateCount: 2, sampleCount: 25, maxCandidatesPerEdge: 140, maxSearchNodes: 2_000 });
-        if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
+        const result = routeAnnularPermutation(created.value);
         const expectedFailures = EXPECTED_BOUNDED_REJECTIONS.get(`${p},${q}`) ?? [];
         if (!result.isRoutable) {
-          expect(result.diagnostics.searchNodes).toBeLessThanOrEqual(result.diagnostics.maxSearchNodes ?? 2_000);
+          expect(result.diagnostics.searchNodes).toBeLessThanOrEqual(result.diagnostics.maxSearchNodes ?? 5_000);
           failures.push(`${images.join(",")}: ${result.reason}`);
           continue;
         }

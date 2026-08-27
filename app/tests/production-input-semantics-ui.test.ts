@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it } from "vitest";
+import { INPUT_LIMITS } from "../src/config/limits";
 import productionMarkup from "../index.html?raw";
 
 describe("annular input interpretation UI", () => {
@@ -10,6 +11,28 @@ describe("annular input interpretation UI", () => {
     });
     document.documentElement.innerHTML = productionMarkup;
     await import("../src/main");
+  });
+
+  it("advertises the runtime character ceilings on every user text field", () => {
+    for (const selector of ["#disc-input", "#annular-input"]) {
+      expect(document.querySelector<HTMLInputElement>(selector)?.maxLength).toBe(INPUT_LIMITS.inputCharacters);
+    }
+    for (const selector of ["#disc-n", "#annular-p", "#annular-q"]) {
+      expect(document.querySelector<HTMLInputElement>(selector)?.maxLength).toBe(INPUT_LIMITS.numericInputCharacters);
+    }
+  });
+
+  it("reports raw numeric length failures accurately even for programmatic values", () => {
+    const oversized = "9".repeat(INPUT_LIMITS.numericInputCharacters + 1);
+    const discN = document.querySelector<HTMLInputElement>("#disc-n")!;
+    discN.value = oversized;
+    document.querySelector<HTMLButtonElement>("#disc-random-button")!.click();
+    expect(document.querySelector("#disc-message")?.textContent).toContain(`${INPUT_LIMITS.numericInputCharacters} characters`);
+
+    const annularP = document.querySelector<HTMLInputElement>("#annular-p")!;
+    annularP.value = oversized;
+    document.querySelector<HTMLButtonElement>("#annular-random-button")!.click();
+    expect(document.querySelector("#annular-message")?.textContent).toContain(`${INPUT_LIMITS.numericInputCharacters} characters`);
   });
 
   it("switches interpretation and surfaces without rewriting the typed permutation", () => {

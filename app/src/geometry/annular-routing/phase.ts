@@ -1,3 +1,4 @@
+import { ROUTING_POLICY } from "../../config/routingPolicy";
 import type { AnnularPermutation } from "../../math/annular";
 import { defaultAnnularPhase, leastCommonMultiple } from "../annular";
 import type { AnnularDirectedEdge } from "./types";
@@ -9,8 +10,8 @@ export function wrapAngle(value: number): number {
   return ((value + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI;
 }
 
-export function annularPhaseCandidates(p: number, q: number, count = 9): readonly number[] {
-  if (!Number.isInteger(count) || count < 2 || count > 65) throw new RangeError("phase candidate count must be in [2,65]");
+export function annularPhaseCandidates(p: number, q: number, count: number = ROUTING_POLICY.phaseCandidateCount): readonly number[] {
+  if (!Number.isInteger(count) || count < 2 || count > ROUTING_POLICY.maximumPhaseCandidateCount) throw new RangeError(`phase candidate count must be in [2,${ROUTING_POLICY.maximumPhaseCandidateCount}]`);
   const period = TWO_PI / leastCommonMultiple(p, q);
   const values = Array.from({ length: count }, (_, index) => (period * index) / count);
   values.push(defaultAnnularPhase(p, q) % period);

@@ -1,5 +1,5 @@
 import type { AnnularLayout, Point } from "../annular";
-import { analyzeRoutePair } from "./intersections";
+import { analyzeRoutePair, hasFiniteRouteSamples } from "./intersections";
 import type { AnnularRouteCandidate, RoutePairDiagnostic } from "./types";
 
 export interface ClearanceAnalysis {
@@ -13,7 +13,31 @@ function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-export function analyzeRouteClearance(
+function invalidClearanceAnalysis(): ClearanceAnalysis {
+  return Object.freeze({
+    hardCollisionCount: 1,
+    minimumClearance: 0,
+    worstPair: null,
+    labelWarnings: Object.freeze(["invalid route geometry"]),
+  });
+}
+
+function hasFiniteLabelGeometry(layout: unknown): layout is AnnularLayout {
+  if (typeof layout !== "object" || layout === null) return false;
+  try {
+    const vertices = (layout as { readonly vertices?: unknown }).vertices;
+    if (!Array.isArray(vertices) || vertices.length === 0) return false;
+    return vertices.every((vertex) => {
+      const labelPoint = (vertex as { readonly labelPoint?: { readonly x?: unknown; readonly y?: unknown } } | null)?.labelPoint;
+      return typeof labelPoint?.x === "number" && Number.isFinite(labelPoint.x)
+        && typeof labelPoint.y === "number" && Number.isFinite(labelPoint.y);
+    });
+  } catch {
+    return false;
+  }
+}
+
+function analyzeFiniteRouteClearance(
   routes: readonly AnnularRouteCandidate[],
   layout: AnnularLayout,
   hardClearance: number,
@@ -45,4 +69,25 @@ export function analyzeRouteClearance(
     worstPair,
     labelWarnings: Object.freeze(labelWarnings),
   });
+}
+
+export function analyzeRouteClearance(
+  routes: readonly AnnularRouteCandidate[],
+  layout: AnnularLayout,
+  hardClearance: number,
+  commonEndpointRadius: number,
+  approximationTolerance = 0,
+): ClearanceAnalysis {
+  if (!Number.isFinite(hardClearance) || hardClearance < 0
+    || !Number.isFinite(commonEndpointRadius) || commonEndpointRadius < 0
+    || !Number.isFinite(approximationTolerance) || approximationTolerance < 0) {
+    throw new RangeError("clearance, endpoint radius, and approximation tolerance must be finite and nonnegative");
+  }
+  try {
+    if (!Array.isArray(routes) || !hasFiniteLabelGeometry(layout)
+      || routes.some((route) => !hasFiniteRouteSamples(route))) return invalidClearanceAnalysis();
+    return analyzeFiniteRouteClearance(routes, layout, hardClearance, commonEndpointRadius, approximationTolerance);
+  } catch {
+    return invalidClearanceAnalysis();
+  }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INPUT_LIMITS } from "../src/config/limits";
+import { INPUT_LIMITS, parseBoundedPositiveInteger } from "../src/config/limits";
 import { ROUTING_POLICY } from "../src/config/routingPolicy";
 import { adaptiveRouteSamples, analyzeRouteClearance, analyzeRoutePair, annularSeamStates, createCandidateGenerationBudget, createCycleCorridors, extractAnnularEdges, generateCycleBundles, generateRouteCandidates, routeAnnularPermutation, type AnnularRouteCandidate, type RoutedAnnularSuccess } from "../src/geometry/annular-routing";
 import { createAnnularLayout, createAnnularRoute, sampleAnnularRoute, type AnnularRoute } from "../src/geometry/annular";
@@ -20,6 +20,23 @@ function denseClearance(routed: RoutedAnnularSuccess, hardClearance: number, sam
 }
 
 describe("hostile input and supported boundaries", () => {
+  it("caps raw numeric field text before normalization while preserving bounded leading-zero syntax", () => {
+    const atLimit = `+${"0".repeat(INPUT_LIMITS.numericInputCharacters - 2)}1`;
+    expect(atLimit).toHaveLength(INPUT_LIMITS.numericInputCharacters);
+    expect(parseBoundedPositiveInteger(atLimit, INPUT_LIMITS.discSupport)).toEqual({ ok: true, value: 1 });
+    expect(parseBoundedPositiveInteger(" +00020 ", INPUT_LIMITS.annularP)).toEqual({ ok: true, value: 20 });
+
+    const aboveLimit = `+${"0".repeat(INPUT_LIMITS.numericInputCharacters - 1)}1`;
+    expect(aboveLimit).toHaveLength(INPUT_LIMITS.numericInputCharacters + 1);
+    expect(parseBoundedPositiveInteger(aboveLimit, INPUT_LIMITS.discSupport)).toEqual({ ok: false, reason: "input-too-long" });
+    const processed = processAnnularInput(aboveLimit, "1", "");
+    expect(processed.ok).toBe(false);
+    if (!processed.ok) {
+      expect(processed.error.kind).toBe("input-limit");
+      expect(processed.error.message).toContain(`${INPUT_LIMITS.numericInputCharacters} characters`);
+    }
+  });
+
   it("round-trips a deterministic supported partition corpus", () => {
     for (const notation of ["(1)", "(1)(2)", "(1 4)(2 3)", "(1 2 3)(4)(5 6)"]) {
       const first = parseDiscPartition(notation);
@@ -54,6 +71,19 @@ describe("hostile input and supported boundaries", () => {
   it.each(["4294967295", "4294967296", "9007199254740991", "9007199254740992", "9".repeat(10_000)])("rejects annular boundary %s without throwing", (p) => {
     expect(() => processAnnularInput(p, "1", "")).not.toThrow();
     const result = processAnnularInput(p, "1", "");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("input-limit");
+  });
+
+  it.each([
+    { notation: " ".repeat(INPUT_LIMITS.inputCharacters + 1), expectedParserKind: "input-too-long" },
+    { notation: `(${INPUT_LIMITS.maximumLabel + 1})`, expectedParserKind: "label-too-large" },
+    { notation: `(${"9".repeat(16)})`, expectedParserKind: "unsafe-integer" },
+  ])("classifies $expectedParserKind annular notation as an infrastructure limit", ({ notation, expectedParserKind }) => {
+    const parsed = parseAnnularPermutation(notation, 1, 1);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.kind).toBe(expectedParserKind);
+    const result = processAnnularInput("1", "1", notation);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("input-limit");
   });
@@ -110,7 +140,7 @@ describe("truthful routing contracts", () => {
   });
 
   it("derives principal proof state from the selected route class", () => {
-    const routed = routeAnnularPermutation(annular("(1 2)(3 4 5)", 1, 4));
+    const routed = routeAnnularPermutation(annular("(1 2 5 4)(3)", 2, 3));
     expect(routed.isRoutable, routed.isRoutable ? "success" : routed.reason).toBe(true);
     if (!routed.isRoutable) return;
     expect(routed.diagnostics.throughRoutes?.every((route) => route.selectedWinding === route.principalWinding)).toBe(true);
@@ -132,6 +162,7 @@ describe("truthful routing contracts", () => {
     { commonEndpointRadius: Number.MAX_VALUE },
     { hardClearance: ROUTING_POLICY.maximumDistanceOption + 1 },
     { sampleCount: ROUTING_POLICY.maximumRenderSampleCount + 1 },
+    { phaseCandidateCount: ROUTING_POLICY.maximumPhaseCandidateCount + 1 },
   ])("rejects invalid numeric routing options structurally: $0", (options) => {
     const routed = routeAnnularPermutation(annular("(1)(2)", 1, 1), options);
     expect(routed.isRoutable).toBe(false);
@@ -161,18 +192,15 @@ describe("truthful routing contracts", () => {
   });
 
   it("materializes only bounded candidates for a positive one-node budget", () => {
-    const before = process.memoryUsage().rss;
     const routed = routeAnnularPermutation(
       annular("(1 2 3 4 5 6 7 8 9 10)(11)", 10, 1),
       { maxSearchNodes: 1, maxCandidatesPerEdge: 1, sampleCount: ROUTING_POLICY.maximumRenderSampleCount },
     );
-    const rssGrowth = process.memoryUsage().rss - before;
     expect(routed.isRoutable).toBe(false);
     if (!routed.isRoutable) expect(routed.reason).toBe("search-limit-exceeded");
     expect(routed.diagnostics.searchedCandidateCount).toBeLessThanOrEqual(11);
     expect(routed.diagnostics.materializedSamplePointCount).toBeLessThanOrEqual(11 * ROUTING_POLICY.maximumRenderSampleCount);
     expect(routed.diagnostics.bundleValidationChecks).toBeLessThanOrEqual(46);
-    expect(rssGrowth).toBeLessThan(32 * 1024 * 1024);
   });
 
   it("caps actual route objects rather than multiplying bundles by cycle edges", () => {

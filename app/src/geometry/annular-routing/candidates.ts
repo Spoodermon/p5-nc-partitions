@@ -44,7 +44,7 @@ export function generateRouteCandidates(
   maximum = 36,
 ): readonly AnnularRouteCandidate[] {
   if (!Number.isInteger(sampleCount) || sampleCount < 2 || sampleCount > ROUTING_POLICY.maximumRenderSampleCount) throw new RangeError(`sample count must be an integer in [2,${ROUTING_POLICY.maximumRenderSampleCount}]`);
-  if (!Number.isInteger(maximum) || maximum < 1 || maximum > 10_000) throw new RangeError("maximum candidates must be an integer in [1,10000]");
+  if (!Number.isInteger(maximum) || maximum < 1 || maximum > ROUTING_POLICY.maximumCandidatesPerEdge) throw new RangeError(`maximum candidates must be an integer in [1,${ROUTING_POLICY.maximumCandidatesPerEdge}]`);
   const specs: Array<{ winding: number; lane: number; excursion: number; angularBias: number }> = [];
   if (edge.role === "singleton") {
     SINGLETON_EXCURSIONS.forEach((excursion, lane) => singletonBiases(edge).forEach((angularBias) => {

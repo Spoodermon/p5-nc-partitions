@@ -59,8 +59,8 @@ export interface RoutingMetrics {
   readonly searchNodes: number;
   readonly bundleValidationChecks?: number;
   readonly elapsedMilliseconds: number;
-  readonly phaseScore: number;
-  readonly routeScore: number;
+  readonly phaseScore?: number;
+  readonly routeScore?: number;
   readonly preferredClearanceDeficit?: number;
   readonly topologicalRejections?: number;
   readonly principalThroughFallbackUsed?: boolean;
@@ -75,7 +75,18 @@ export interface RoutingMetrics {
   readonly verificationClearanceMargin?: number;
   readonly verificationMaximumDepth?: number;
   readonly verificationMaximumSegmentsPerRoute?: number;
+  readonly requestedCommonEndpointRadius?: number;
+  readonly exhaustedResources?: readonly RoutingExhaustedResource[];
+  readonly manualGeometryOverride?: boolean;
+  readonly manualEditCount?: number;
 }
+
+export type RoutingExhaustedResource =
+  | "search-nodes"
+  | "route-candidates"
+  | "sample-points"
+  | "validation-checks"
+  | "invalid-generation-budget";
 
 export interface ThroughRouteDiagnostic {
   readonly edgeId: string;

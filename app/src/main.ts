@@ -1,13 +1,15 @@
 import "./style.css";
 import { INPUT_LIMITS, parseBoundedPositiveInteger, type BoundedPositiveIntegerError } from "./config/limits";
 import type { DirectedEdge } from "./geometry/disc";
-import { routeAnnularPermutation, type AnnularDirectedEdge } from "./geometry/annular-routing";
-import { annularKrewerasComplement, annularPermutationToString, classifiedAnnularCycles, krewerasComplement, mathErrorMessage, parseNoncrossingPartition, partitionToString, randomAnnularBlockNotation, randomNoncrossingPartition, type DiscPartition } from "./math";
-import { annularResolutionMessage, processAnnularInput, type AcceptedAnnularInput, type AnnularInputInterpretation } from "./production/annularController";
+import { isEditableCoverCubic, routeAnnularPermutation, verifyAnnularRouteControlEdit, type AnnularDirectedEdge, type CoverCubicControlEdit } from "./geometry/annular-routing";
+import { annularKrewerasComplement, annularPermutationToString, classifiedAnnularCycles, krewerasComplement, mathErrorMessage, parseNoncrossingPartition, partitionToString, randomNoncrossingPartition, type DiscPartition } from "./math";
+import { annularResolutionMessage, annularRoutingFailureMessage, processAnnularInput, type AcceptedAnnularInput, type AnnularInputInterpretation } from "./production/annularController";
+import { defaultAnnularRandomDensity, routeAwareRandomAnnularPermutation, type AnnularRandomMode } from "./production/randomAnnular";
 import { ProductionSurfaceState, type SurfaceMode } from "./production/surfaceState";
 import { annularDiagram } from "./renderer/annularModel";
 import { renderAnnularDiagram } from "./renderer/annularSvgRenderer";
 import { downloadSvg } from "./renderer/export";
+import { installNumberFonts, numberFontStack } from "./renderer/fonts";
 import { partitionDiagram } from "./renderer/model";
 import { renderDiagram } from "./renderer/svgRenderer";
 import { DEFAULT_CYCLE_COLOR, NAMED_PALETTES, paletteById } from "./renderer/colors";
@@ -17,6 +19,8 @@ type DiscDisplayMode = "partition" | "kreweras";
 type AnnularDisplayMode = "permutation" | "kreweras";
 type ColorMode = "palette" | "single" | "kind" | "custom";
 type SelectedEdge = { readonly surface: "disc"; readonly edge: DirectedEdge } | { readonly surface: "annular"; readonly edge: AnnularDirectedEdge } | null;
+
+installNumberFonts();
 
 function boundedIntegerErrorMessage(name: "n" | "p" | "q", reason: BoundedPositiveIntegerError, maximum: number): string {
   if (reason === "input-too-long") return `${name} is too long; the supported maximum is ${INPUT_LIMITS.numericInputCharacters} characters.`;
@@ -51,10 +55,13 @@ const annularP = requireElement<HTMLInputElement>("annular-p");
 const annularQ = requireElement<HTMLInputElement>("annular-q");
 const annularInput = requireElement<HTMLInputElement>("annular-input");
 const annularRandomButton = requireElement<HTMLButtonElement>("annular-random-button");
+const annularRandomDistribution = requireElement<HTMLSelectElement>("annular-random-distribution");
 const annularMessage = requireElement<HTMLParagraphElement>("annular-message");
 const annularControls = requireElement<HTMLDivElement>("annular-controls");
 const routingProgress = requireElement<HTMLDivElement>("routing-progress");
 const routingProgressLabel = requireElement<HTMLSpanElement>("routing-progress-label");
+const undoCurveButton = requireElement<HTMLButtonElement>("undo-curve-button");
+const resetCurveButton = requireElement<HTMLButtonElement>("reset-curve-button");
 const colorModeControl = requireElement<HTMLSelectElement>("color-mode");
 const paletteOptions = requireElement<HTMLDivElement>("palette-options");
 const singleColorControl = requireElement<HTMLLabelElement>("single-color-control");
@@ -77,22 +84,29 @@ let annularComplementState: AcceptedAnnularInput | null = null;
 let selectedPalette = "tidepool";
 const customColors = new Map<string, string>();
 const annularComplementCache = new Map<string, AcceptedAnnularInput>();
-const NUMBER_FONTS: Readonly<Record<string, string>> = Object.freeze({
-  Newsreader: "Newsreader, Georgia, 'Times New Roman', serif",
-  Geist: "Geist, ui-sans-serif, system-ui, sans-serif",
-  "Geist Mono": "'Geist Mono', ui-monospace, monospace",
-});
 const state = new ProductionSurfaceState(
   requiredDiscPartition(getExample("two-cycle").notation),
   requiredAnnularState(getAnnularExample("through-two-cycle")),
 );
 let selectedEdge: SelectedEdge = null;
 let currentSvg: SVGSVGElement | null = null;
+let annularEditBaseline: AcceptedAnnularInput = state.annular;
+const annularEditHistory: AcceptedAnnularInput[] = [];
+let annularStatusOverride: { readonly state: "valid" | "error"; readonly message: string } | null = null;
+let annularRequestGeneration = 0;
+let distributionWasExplicitlyChosen = false;
+let pendingCurveControlFocus: 1 | 2 | null = null;
+const CURVE_EDIT_HISTORY_LIMIT = 50;
 
 function requireElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing required element #${id}`);
   return element as T;
+}
+
+function rememberAnnularEditState(value: AcceptedAnnularInput): void {
+  if (annularEditHistory.length >= CURVE_EDIT_HISTORY_LIMIT) annularEditHistory.shift();
+  annularEditHistory.push(value);
 }
 
 function requiredDiscPartition(input: string): DiscPartition {
@@ -115,7 +129,7 @@ function displayedAnnularState(): AcceptedAnnularInput {
   return annularDisplayMode === "kreweras" && annularComplementState ? annularComplementState : state.annular;
 }
 
-function selectedNumberFont(): string { return NUMBER_FONTS[numberFontControl.value] ?? NUMBER_FONTS.Newsreader as string; }
+function selectedNumberFont(): string { return numberFontStack(numberFontControl.value); }
 function annularCacheKey(value: AcceptedAnnularInput): string { return `${value.permutation.p},${value.permutation.q}:${value.canonicalNotation}`; }
 
 function cycleDescriptors(): readonly { notation: string; kind: "outer" | "inner" | "through" }[] {
@@ -168,6 +182,14 @@ function updateSelection(edge: SelectedEdge): void {
     selectionOutput.value = `cycle: (${cycle?.cycle.join(" ") ?? ""}) · edge: ${value.startLabel} → ${value.endLabel} · cycle kind: ${kind} · role: ${value.role}`;
   }
   clearButton.disabled = edge === null;
+  const editableCandidate = edge?.surface === "annular" && annularDisplayMode === "permutation"
+    ? state.annular.routed.routes.find((candidate) => candidate.edge.id === edge.edge.id)
+    : undefined;
+  const canEdit = isEditableCoverCubic(editableCandidate);
+  undoCurveButton.hidden = !canEdit;
+  resetCurveButton.hidden = !canEdit;
+  undoCurveButton.disabled = !canEdit || annularEditHistory.length === 0;
+  resetCurveButton.disabled = !canEdit || state.annular === annularEditBaseline;
 }
 
 function redraw(): void {
@@ -188,6 +210,7 @@ function redraw(): void {
     discMessage.textContent = `${prefix} = ${partitionToString(displayedDiscPartition())}`;
   } else {
     const annularState = displayedAnnularState();
+    const editingEnabled = annularDisplayMode === "permutation";
     const rendered = renderAnnularDiagram(figure, annularDiagram(annularState.permutation, annularState.routed), {
       showDirection: directionToggle.checked,
       showRibbonFill: ribbonFillToggle.checked,
@@ -195,12 +218,49 @@ function redraw(): void {
       cycleEdgeWidth: Number(cycleWidth.value), outerBoundaryWidth: Number(outerWidth.value), innerBoundaryWidth: Number(innerWidth.value),
       cycleColors: colors,
       numberFont: selectedNumberFont(),
-    }, { onSelect: (edge) => { selectedEdge = { surface: "annular", edge }; updateSelection(selectedEdge); redraw(); } });
+    }, {
+      onSelect: (edge) => { selectedEdge = { surface: "annular", edge }; updateSelection(selectedEdge); redraw(); },
+      onCurveEditCommit: editingEnabled ? commitAnnularCurveEdit : undefined,
+      onCurveEditCancel: editingEnabled ? redraw : undefined,
+    });
     currentSvg = rendered.svg;
-    annularMessage.dataset.state = "valid";
-    const prefix = annularDisplayMode === "kreweras" ? "Kr(τ)" : "τ";
-    annularMessage.textContent = `${annularResolutionMessage(annularState, prefix)} · (p,q)=(${annularState.permutation.p},${annularState.permutation.q})`;
+    if (annularStatusOverride && annularDisplayMode === "permutation") {
+      annularMessage.dataset.state = annularStatusOverride.state;
+      annularMessage.textContent = annularStatusOverride.message;
+    } else {
+      annularMessage.dataset.state = "valid";
+      const prefix = annularDisplayMode === "kreweras" ? "Kr(τ)" : "τ";
+      annularMessage.textContent = `${annularResolutionMessage(annularState, prefix)} · (p,q)=(${annularState.permutation.p},${annularState.permutation.q})`;
+    }
+    if (pendingCurveControlFocus !== null) {
+      currentSvg.querySelector<SVGElement>(`[data-control-index="${pendingCurveControlFocus}"]`)?.focus();
+      pendingCurveControlFocus = null;
+    }
   }
+}
+
+function commitAnnularCurveEdit(edgeId: string, controls: CoverCubicControlEdit, restoreFocusToControl?: 1 | 2): void {
+  pendingCurveControlFocus = restoreFocusToControl ?? null;
+  if (annularDisplayMode !== "permutation") { redraw(); return; }
+  const edited = verifyAnnularRouteControlEdit(state.annular.routed, edgeId, controls);
+  if (!edited.ok) {
+    const detail = edited.reason === "self-intersection"
+      ? "the curve would intersect itself"
+      : edited.reason === "collision"
+        ? "the curve would collide with another routed edge"
+        : edited.reason === "verification-failed"
+          ? "the analytical verifier could not certify that geometry within its fixed depth/segment bounds"
+        : "that edge/control position is not editable";
+    annularStatusOverride = { state: "error", message: `Curve change rejected: ${detail}. Restored the previous verified curve.` };
+    updateSelection(selectedEdge);
+    redraw();
+    return;
+  }
+  rememberAnnularEditState(state.annular);
+  state.annular = Object.freeze({ ...state.annular, routed: edited.routed });
+  annularStatusOverride = { state: "valid", message: "Curve adjusted and admitted by the production collision verifier." };
+  updateSelection(selectedEdge);
+  redraw();
 }
 
 function acceptDiscInput(input: string): boolean {
@@ -212,28 +272,51 @@ function acceptDiscInput(input: string): boolean {
   selectedEdge = null; updateSelection(null); syncExampleSelector(); redraw(); return true;
 }
 
-function acceptAnnularInput(p: string, q: string, input: string, interpretation: AnnularInputInterpretation = annularInputInterpretation): boolean {
-  const result = processAnnularInput(p, q, input, routeAnnularPermutation, interpretation);
-  if (!result.ok) { annularMessage.dataset.state = "error"; annularMessage.textContent = result.error.message; return false; }
+function commitAcceptedAnnularInput(
+  result: AcceptedAnnularInput,
+  statusOverride: { readonly state: "valid" | "error"; readonly message: string } | null = null,
+): void {
   state.annular = result;
+  annularEditBaseline = result;
+  annularEditHistory.splice(0);
+  annularStatusOverride = statusOverride;
   annularComplementState = annularComplementCache.get(annularCacheKey(result)) ?? null;
   annularDisplayMode = "permutation";
   annularDisplayControls.forEach((control) => { control.checked = control.value === "permutation"; });
   annularP.value = String(result.permutation.p); annularQ.value = String(result.permutation.q);
-  selectedEdge = null; updateSelection(null); syncExampleSelector(); redraw(); return true;
+  syncRandomDistributionDefault();
+  selectedEdge = null; updateSelection(null); syncExampleSelector(); redraw();
 }
 
-function queueAnnularInput(p: string, q: string, input: string, fallbackInput?: string): void {
+function acceptAnnularInput(p: string, q: string, input: string, interpretation: AnnularInputInterpretation = annularInputInterpretation): boolean {
+  annularStatusOverride = null;
+  const result = processAnnularInput(p, q, input, routeAnnularPermutation, interpretation);
+  if (!result.ok) { annularMessage.dataset.state = "error"; annularMessage.textContent = result.error.message; return false; }
+  commitAcceptedAnnularInput(result);
+  return true;
+}
+
+function queueAnnularInput(p: string, q: string, input: string): void {
   const interpretation = annularInputInterpretation;
+  const generation = ++annularRequestGeneration;
   annularMessage.dataset.state = "pending";
   annularMessage.textContent = "Routing…";
   routingProgress.hidden = false;
   routingProgressLabel.textContent = "Routing…";
   window.setTimeout(() => {
+    if (generation !== annularRequestGeneration) return;
     const accepted = acceptAnnularInput(p, q, input, interpretation);
-    if (!accepted && fallbackInput) { annularInput.value = fallbackInput; acceptAnnularInput(p, q, fallbackInput, interpretation); }
-    routingProgress.hidden = true;
+    if (generation === annularRequestGeneration) routingProgress.hidden = true;
+    if (!accepted) annularStatusOverride = null;
   }, 0);
+}
+
+function syncRandomDistributionDefault(): void {
+  if (distributionWasExplicitlyChosen) return;
+  const parsedP = parseBoundedPositiveInteger(annularP.value, INPUT_LIMITS.annularP);
+  const parsedQ = parseBoundedPositiveInteger(annularQ.value, INPUT_LIMITS.annularQ);
+  if (!parsedP.ok || !parsedQ.ok || parsedP.value + parsedQ.value > INPUT_LIMITS.annularTotalSupport) return;
+  annularRandomDistribution.value = defaultAnnularRandomDensity(parsedP.value, parsedQ.value);
 }
 
 function populateExamples(): void {
@@ -301,7 +384,7 @@ function populatePalettes(): void {
 exampleSelect.addEventListener("change", () => {
   if (exampleSelect.value === "custom") return;
   if (state.mode === "disc") { const example = getExample(exampleSelect.value); discInput.value = example.notation; acceptDiscInput(example.notation); }
-  else { const example = getAnnularExample(exampleSelect.value); annularP.value = String(example.p); annularQ.value = String(example.q); annularInput.value = example.notation; queueAnnularInput(String(example.p), String(example.q), example.notation); }
+  else { const example = getAnnularExample(exampleSelect.value); annularP.value = String(example.p); annularQ.value = String(example.q); syncRandomDistributionDefault(); annularInput.value = example.notation; queueAnnularInput(String(example.p), String(example.q), example.notation); }
 });
 discForm.addEventListener("submit", (event) => { event.preventDefault(); acceptDiscInput(discInput.value); });
 annularForm.addEventListener("submit", (event) => { event.preventDefault(); queueAnnularInput(annularP.value, annularQ.value, annularInput.value); });
@@ -321,16 +404,64 @@ annularRandomButton.addEventListener("click", () => {
   if (!parsedQ.ok) { annularMessage.dataset.state = "error"; annularMessage.textContent = boundedIntegerErrorMessage("q", parsedQ.reason, INPUT_LIMITS.annularQ); return; }
   if (parsedP.value + parsedQ.value > INPUT_LIMITS.annularTotalSupport) { annularMessage.dataset.state = "error"; annularMessage.textContent = `Use p ≤ ${INPUT_LIMITS.annularP}, q ≤ ${INPUT_LIMITS.annularQ}, and p+q ≤ ${INPUT_LIMITS.annularTotalSupport}.`; return; }
   const p = parsedP.value; const q = parsedQ.value;
-  const notation = randomAnnularBlockNotation(p, q, Math.random, 0.45);
-  const fallback = randomAnnularBlockNotation(p, q, Math.random, 0);
-  annularInputInterpretation = "canonical-blocks";
+  annularInputInterpretation = "strict-permutation";
   annularInterpretationControls.forEach((control) => { control.checked = control.value === annularInputInterpretation; });
-  annularInput.value = notation; queueAnnularInput(String(p), String(q), notation, fallback);
+  const generation = ++annularRequestGeneration;
+  const requestedDistribution = annularRandomDistribution.value as AnnularRandomMode;
+  annularMessage.dataset.state = "pending";
+  annularMessage.textContent = "Routing a genuine connected ANC…";
+  routingProgress.hidden = false;
+  routingProgressLabel.textContent = "Routing random ANC — up to 4 bounded attempts…";
+  window.setTimeout(() => {
+    if (generation !== annularRequestGeneration) return;
+    try {
+      const generated = routeAwareRandomAnnularPermutation(p, q, requestedDistribution);
+      if (generation !== annularRequestGeneration) return;
+      if (!generated.ok) {
+        annularStatusOverride = null;
+        annularMessage.dataset.state = "error";
+        annularMessage.textContent = generated.lastFailure
+          ? `${annularRoutingFailureMessage(generated.lastFailure)} Random ANC tried ${generated.attempts} bounded connected candidates; the previous diagram was retained.`
+          : "No distinct connected random ANC candidate could be generated; the previous diagram was retained.";
+        return;
+      }
+      const notation = annularPermutationToString(generated.permutation);
+      const accepted: AcceptedAnnularInput = Object.freeze({
+        ok: true,
+        permutation: generated.permutation,
+        routed: generated.routed,
+        interpretation: "strict-permutation",
+        sourceNotation: notation,
+        resolvedNotation: notation,
+        wasAutoOriented: false,
+        canonicalNotation: notation,
+      });
+      annularInput.value = notation;
+      const distribution = generated.density[0]?.toUpperCase() + generated.density.slice(1);
+      const fallback = generated.usedMinimalFallback
+        ? `Showing ${distribution} minimal connected fallback after ${generated.attempts} bounded attempts.`
+        : generated.usedSparseFallback
+          ? `Showing ${distribution} fallback after ${generated.attempts} bounded attempts.`
+          : `Showing ${distribution} connected ANC after ${generated.attempts} bounded attempt${generated.attempts === 1 ? "" : "s"}.`;
+      commitAcceptedAnnularInput(accepted, { state: "valid", message: `${fallback} τ = ${notation} · (p,q)=(${p},${q})` });
+    } catch (error) {
+      console.error("Random ANC generation failed", error);
+      annularStatusOverride = null;
+      annularMessage.dataset.state = "error";
+      const detail = error instanceof Error ? ` (${error.message})` : "";
+      annularMessage.textContent = `Random ANC generation encountered an unexpected failure${detail}; the previous diagram was retained.`;
+    } finally {
+      if (generation === annularRequestGeneration) routingProgress.hidden = true;
+    }
+  }, 0);
 });
+annularRandomDistribution.addEventListener("change", () => { distributionWasExplicitlyChosen = true; });
+[annularP, annularQ].forEach((control) => control.addEventListener("input", syncRandomDistributionDefault));
 surfaceControls.forEach((control) => control.addEventListener("change", () => { if (control.checked) showSurface(control.value as SurfaceMode); }));
 discDisplayControls.forEach((control) => control.addEventListener("change", () => { if (control.checked) { discDisplayMode = control.value as DiscDisplayMode; selectedEdge = null; updateSelection(null); redraw(); } }));
 annularDisplayControls.forEach((control) => control.addEventListener("change", () => {
   if (!control.checked) return;
+  annularStatusOverride = null;
   annularDisplayMode = control.value as AnnularDisplayMode;
   if (annularDisplayMode === "kreweras" && !annularComplementState) showAnnularComplement();
   else { selectedEdge = null; updateSelection(null); redraw(); }
@@ -343,10 +474,24 @@ for (const [control, output] of [[cycleWidth, cycleWidthOutput], [outerWidth, ou
   control.addEventListener("input", () => { output.value = control.value; redraw(); });
 }
 clearButton.addEventListener("click", () => { selectedEdge = null; updateSelection(null); redraw(); });
+undoCurveButton.addEventListener("click", () => {
+  const previous = annularEditHistory.pop();
+  if (!previous) return;
+  state.annular = previous;
+  annularStatusOverride = { state: "valid", message: "Restored the previous verified curve." };
+  updateSelection(selectedEdge); redraw();
+});
+resetCurveButton.addEventListener("click", () => {
+  if (state.annular === annularEditBaseline) return;
+  rememberAnnularEditState(state.annular);
+  state.annular = annularEditBaseline;
+  annularStatusOverride = { state: "valid", message: "Reset all curve edits for this permutation." };
+  updateSelection(selectedEdge); redraw();
+});
 exportButton.addEventListener("click", () => {
   if (!currentSvg) return;
   const filename = state.mode === "disc" ? `disc-partition-n${state.discPartition.n}.svg` : `annular-permutation-p${state.annular.permutation.p}-q${state.annular.permutation.q}.svg`;
-  downloadSvg(currentSvg, filename);
+  downloadSvg(currentSvg, filename, numberFontControl.value);
 });
 figureShell.addEventListener("pointermove", (event) => {
   const bounds = figureShell.getBoundingClientRect();
@@ -361,5 +506,6 @@ exportButton.addEventListener("blur", () => figureShell.classList.remove("is-dow
 discInput.value = partitionToString(state.discPartition);
 discN.value = String(state.discPartition.n);
 annularP.value = String(state.annular.permutation.p); annularQ.value = String(state.annular.permutation.q); annularInput.value = state.annular.canonicalNotation;
+syncRandomDistributionDefault();
 populatePalettes();
 updateSelection(null); showSurface("disc");

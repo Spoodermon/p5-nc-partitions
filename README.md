@@ -37,4 +37,4 @@ GitHub Actions builds `app/` and deploys `app/dist/` to GitHub Pages. Production
 
 ## Current architectural debt
 
-Annular canonicalization and routing still run synchronously on the main thread. The UI therefore reports only an honest `Routing…` busy state. Moving those computations to a worker belongs in a dedicated follow-up, not this correctness hardening branch.
+Annular canonicalization and routing still run synchronously on the main thread. Random ANC routing is capped at four independently governed attempts and reports only honest attempt/budget information. Moving routing to a cancellable progress-reporting worker, and constructing a routing witness alongside future random generation, remain dedicated follow-ups rather than implicit changes to the current correctness governors.

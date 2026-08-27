@@ -22,6 +22,15 @@ describe("annular input interpretation UI", () => {
     }
   });
 
+  it("starts both settings groups collapsed and gives support-size fields compact hints", () => {
+    const disclosures = [...document.querySelectorAll<HTMLDetailsElement>(".settings-disclosure")];
+    expect(disclosures.map((details) => details.querySelector("summary")?.textContent)).toEqual(["Line weights", "Cycle colours"]);
+    expect(disclosures.every((details) => !details.open)).toBe(true);
+    for (const selector of ["#disc-n", "#annular-p", "#annular-q"]) {
+      expect(document.querySelector<HTMLInputElement>(selector)?.size).toBe(3);
+    }
+  });
+
   it("reports raw numeric length failures accurately even for programmatic values", () => {
     const oversized = "9".repeat(INPUT_LIMITS.numericInputCharacters + 1);
     const discN = document.querySelector<HTMLInputElement>("#disc-n")!;

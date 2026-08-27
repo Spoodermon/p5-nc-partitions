@@ -141,14 +141,14 @@ export function renderDiagram(
     vertexGroup.circle(17).center(vertex.x, vertex.y).fill(color).stroke({ color: "#ffffff", width: 2.5 });
     vertexGroup
       .text(String(vertex.id))
-      .font({ family: options.numberFont ?? "Newsreader, Georgia, 'Times New Roman', serif", size: 28, anchor: "middle", weight: 600 })
+      .font({ family: options.numberFont ?? "'Newsreader Variable', Georgia, 'Times New Roman', serif", size: 28, anchor: "middle", weight: 600 })
       .fill("#172033")
       .center(vertex.labelPosition.x, vertex.labelPosition.y);
   });
 
   draw
     .text(example.notation)
-    .font({ family: options.numberFont ?? "Newsreader, Georgia, 'Times New Roman', serif", size: 24, anchor: "middle" })
+    .font({ family: options.numberFont ?? "'Newsreader Variable', Georgia, 'Times New Roman', serif", size: 24, anchor: "middle" })
     .fill("#475569")
     .center(DISC_CENTER.x, 966);
 

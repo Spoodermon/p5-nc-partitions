@@ -3,6 +3,7 @@ export * from "./candidates";
 export * from "./clearance";
 export * from "./corridors";
 export * from "./edges";
+export * from "./editing";
 export * from "./fill";
 export * from "./intersections";
 export * from "./phase";

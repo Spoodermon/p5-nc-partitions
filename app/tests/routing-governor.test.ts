@@ -4,11 +4,13 @@ import {
   annularSeamStates,
   consumeCandidateValidationCheck,
   createCandidateGenerationBudget,
+  createCycleBundleFrontier,
   createCycleCorridors,
   extractAnnularEdges,
   generateCycleBundles,
   generateRouteCandidates,
   routeAnnularPermutation,
+  serializeRoutedAnnularDiagram,
   type CandidateGenerationBudget,
 } from "../src/geometry/annular-routing";
 import { createAnnularLayout } from "../src/geometry/annular";
@@ -97,6 +99,56 @@ describe("call-wide annular routing governor", () => {
     );
     expect(second).toHaveLength(0);
     expect({ routes: budget.materializedRoutes, points: budget.materializedPoints, attempts: budget.attemptedBundles }).toEqual(snapshot);
+  });
+
+  it("materializes a memoized cycle frontier only as its requested depth grows", () => {
+    const fixture = cycleFixture("(1)(2)", 1, 1, 1);
+    const budget = createCandidateGenerationBudget(10, 10 * ROUTING_POLICY.heuristicSampleCount);
+    const frontier = createCycleBundleFrontier(
+      fixture.layout, fixture.seam, fixture.corridor, fixture.edges,
+      ROUTING_POLICY.heuristicSampleCount, "all", 4,
+      ROUTING_POLICY.hardClearance, ROUTING_POLICY.commonEndpointRadius, budget,
+    );
+
+    expect(frontier.materializedSize).toBe(0);
+    expect(budget.materializedRoutes).toBe(0);
+    const first = frontier.take(1);
+    expect(first).toHaveLength(1);
+    expect(budget.materializedRoutes).toBe(1);
+    expect(frontier.take(1)[0]).toBe(first[0]);
+    expect(budget.materializedRoutes).toBe(1);
+    const secondLayer = frontier.take(2);
+    expect(secondLayer).toHaveLength(2);
+    expect(secondLayer[0]).toBe(first[0]);
+    expect(budget.materializedRoutes).toBe(2);
+    expect(budget.materializedPoints).toBe(2 * ROUTING_POLICY.heuristicSampleCount);
+  });
+
+  it("does not pre-materialize every configured candidate before search", () => {
+    const routed = routeAnnularPermutation(annular("(1)(2)", 1, 1), {
+      maxCandidatesPerEdge: ROUTING_POLICY.maximumCandidatesPerEdge,
+    });
+    expect(routed.isRoutable).toBe(true);
+    expect(routed.diagnostics.materializedRouteCandidateCount).toBe(2);
+    expect(routed.diagnostics.searchedCandidateCount).toBe(2);
+  });
+
+  it("serializes every governor usage/limit pair and exhausted dimension", () => {
+    const routed = routeAnnularPermutation(annular("(1)(2)", 1, 1), { maxSearchNodes: 0 });
+    const serialized = JSON.parse(serializeRoutedAnnularDiagram(routed)) as {
+      diagnostics: Record<string, unknown>;
+    };
+    expect(serialized.diagnostics).toMatchObject({
+      maxSearchNodes: 0,
+      searchNodes: 0,
+      maxMaterializedRouteCandidates: ROUTING_POLICY.maxCallMaterializedRouteCandidates,
+      materializedRouteCandidateCount: 0,
+      maxMaterializedSamplePoints: ROUTING_POLICY.maxCallMaterializedSamplePoints,
+      materializedSamplePointCount: 0,
+      maxBundleValidationChecks: ROUTING_POLICY.maxBundleValidationChecks,
+      bundleValidationChecks: 0,
+      exhaustedResources: ["search-nodes"],
+    });
   });
 
   it("meters rejected through-bundle pair work before another bundle is materialized", () => {

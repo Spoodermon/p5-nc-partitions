@@ -27,6 +27,8 @@ test("annular controls remain distinct, contained, and stateful at every audited
         q: bounds("#annular-q"),
         viewportWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
+        disclosureHeights: [...document.querySelectorAll<HTMLElement>(".settings-disclosure summary")]
+          .map((summary) => summary.getBoundingClientRect().height),
       };
     });
     const overlaps = !(layout.random.right <= layout.render.left || layout.render.right <= layout.random.left || layout.random.bottom <= layout.render.top || layout.render.bottom <= layout.random.top);
@@ -35,6 +37,9 @@ test("annular controls remain distinct, contained, and stateful at every audited
     expect(layout.render.width, `${width}px render button collapsed`).toBeGreaterThan(0);
     expect(layout.p.width, `${width}px p field collapsed`).toBeGreaterThan(0);
     expect(layout.q.width, `${width}px q field collapsed`).toBeGreaterThan(0);
+    expect(layout.p.width, `${width}px p field is wider than its supported-size control`).toBeLessThanOrEqual(48.5);
+    expect(layout.q.width, `${width}px q field is wider than its supported-size control`).toBeLessThanOrEqual(48.5);
+    expect(layout.disclosureHeights.every((height) => height >= 40), `${width}px disclosure target is too short`).toBe(true);
     expect(layout.form.left, `${width}px form escapes left viewport`).toBeGreaterThanOrEqual(0);
     expect(layout.form.right, `${width}px form escapes right viewport`).toBeLessThanOrEqual(layout.viewportWidth + 0.5);
     expect(layout.scrollWidth, `${width}px horizontal overflow`).toBeLessThanOrEqual(layout.viewportWidth);
@@ -42,5 +47,16 @@ test("annular controls remain distinct, contained, and stateful at every audited
     await expect(page.locator("#annular-p")).toHaveValue("2");
     await expect(page.locator("#annular-q")).toHaveValue("2");
     await expect(page.locator("#direction-toggle")).toBeChecked();
+  }
+});
+
+test("disc support size stays compact at every audited viewport", async ({ page }) => {
+  await page.goto("/");
+  for (const width of AUDITED_WIDTHS) {
+    await page.setViewportSize({ width, height: 900 });
+    const input = page.locator("#disc-n");
+    await expect(input).toBeVisible();
+    expect(await input.evaluate((element) => element.getBoundingClientRect().width), `${width}px n field width`).toBeLessThanOrEqual(48.5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth), `${width}px horizontal overflow`).toBeLessThanOrEqual(width);
   }
 });

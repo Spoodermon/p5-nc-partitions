@@ -1,5 +1,5 @@
 import { INPUT_LIMITS, parseBoundedPositiveInteger } from "../config/limits";
-import { routeAnnularPermutation, type RoutedAnnularDiagram } from "../geometry/annular-routing";
+import { routeAnnularPermutation, type RoutedAnnularDiagram, type RoutedAnnularFailure, type RoutingExhaustedResource } from "../geometry/annular-routing";
 import {
   analyzeAnnularNoncrossing,
   annularPermutationFromImages,
@@ -16,6 +16,7 @@ export type AnnularInputInterpretation = "strict-permutation" | "canonical-block
 export interface AnnularInputError {
   readonly kind: AnnularInputErrorKind;
   readonly message: string;
+  readonly routingFailure?: RoutedAnnularFailure;
 }
 
 export interface AcceptedAnnularInput {
@@ -37,6 +38,36 @@ export interface RejectedAnnularInput {
 
 export type AnnularInputResult = AcceptedAnnularInput | RejectedAnnularInput;
 export type AnnularRouter = (value: AnnularPermutation) => RoutedAnnularDiagram;
+
+function usedOverLimit(used: number | undefined, limit: number | undefined): string {
+  return Number.isFinite(used) && Number.isFinite(limit) ? `${used}/${limit} used` : "limit reached";
+}
+
+function exhaustedResourceLabel(resource: RoutingExhaustedResource, failure: RoutedAnnularFailure): string {
+  const metrics = failure.diagnostics;
+  switch (resource) {
+    case "search-nodes": return `search nodes (${usedOverLimit(metrics.searchNodes, metrics.maxSearchNodes)})`;
+    case "route-candidates": return `route candidates (${usedOverLimit(metrics.materializedRouteCandidateCount, metrics.maxMaterializedRouteCandidates)}; the next bundle did not fit)`;
+    case "sample-points": return `sample points (${usedOverLimit(metrics.materializedSamplePointCount, metrics.maxMaterializedSamplePoints)}; the next bundle did not fit)`;
+    case "validation-checks": return `pair-validation checks (${usedOverLimit(metrics.bundleValidationChecks, metrics.maxBundleValidationChecks)})`;
+    case "invalid-generation-budget": return "candidate-generation budget integrity";
+  }
+}
+
+/** Human-readable, counter-backed production routing failure detail. */
+export function annularRoutingFailureMessage(failure: RoutedAnnularFailure): string {
+  if (failure.reason !== "search-limit-exceeded") {
+    return failure.reason === "geometry-verification-failed"
+      ? "The permutation is mathematically annular-noncrossing, but every bounded route found failed authoritative collision verification."
+      : "The permutation is mathematically annular-noncrossing, but the current bounded router could not produce an admitted route.";
+  }
+  const exhausted = failure.diagnostics.exhaustedResources ?? [];
+  if (exhausted.length === 0) {
+    return "The permutation is mathematically annular-noncrossing, but the production routing budget was exhausted (the router did not report which dimension).";
+  }
+  const resources = exhausted.map((resource) => exhaustedResourceLabel(resource, failure)).join("; ");
+  return `The permutation is mathematically annular-noncrossing, but the bounded router exhausted: ${resources}.`;
+}
 
 export function annularResolutionMessage(value: AcceptedAnnularInput, prefix = "τ"): string {
   if (value.interpretation !== "canonical-blocks") return `${prefix} = ${value.resolvedNotation}`;
@@ -220,9 +251,8 @@ export function processAnnularInput(
       ok: false,
       error: {
         kind: "router-failure",
-        message: routed.reason === "search-limit-exceeded"
-          ? "The permutation is mathematically annular-noncrossing, but the production routing search budget was exhausted."
-          : "The permutation is mathematically annular-noncrossing, but the current bounded router could not produce an admitted route.",
+        message: annularRoutingFailureMessage(routed),
+        routingFailure: routed,
       },
     };
   }

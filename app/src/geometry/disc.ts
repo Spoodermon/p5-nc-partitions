@@ -3,6 +3,10 @@ import type { DiagramModel, RenderCycle } from "./types";
 export const VIEWBOX_SIZE = 1000;
 export const DISC_CENTER = { x: 500, y: 500 } as const;
 export const DISC_RADIUS = 370;
+// A geometry-level separation contract for the two directed sides of a
+// transposition ribbon. Responsive SVG scaling may change its on-screen size.
+export const DISC_TWO_CYCLE_LANE_GAP = 12;
+const TWO_CYCLE_RETURN_DEPTH_PREMIUM = 38;
 
 export interface Point {
   readonly x: number;
@@ -186,7 +190,7 @@ export function arcDepth(edge: DirectedEdge, vertexCount: number): number {
   // cyclic spans therefore use equal curvature in either direction, which
   // keeps the closing arc from folding back through its own cycle. A
   // two-cycle alone needs a modest second lane so both directions stay visible.
-  if (edge.cycle.length === 2) return baseDepth + (edge.role === "return" ? 38 : 0);
+  if (edge.cycle.length === 2) return baseDepth + (edge.role === "return" ? TWO_CYCLE_RETURN_DEPTH_PREMIUM : 0);
   return baseDepth;
 }
 
@@ -245,6 +249,26 @@ export function makeDiscArc(
     const offset = scale(bendDirection, depth / 0.75);
     control1 = add(add(start, scale(chordDirection, handle)), offset);
     control2 = add(add(end, scale(chordDirection, -handle)), offset);
+  } else if (edge.cycle.length === 2) {
+    // Reversing a cubic swaps its endpoints and controls. If both directions
+    // use the same capped bow, they therefore describe the exact same locus;
+    // the thicker return stroke hides the forward stroke and the ribbon has
+    // zero area. Split a shared inward bow into two explicit lanes. Both stay
+    // on the interior side of the chord, including for short boundary chords.
+    if (magnitude(bendDirection) < 1e-9) bendDirection = { x: -chordDirection.y, y: chordDirection.x };
+    // Unlike polygon arcs, a two-cycle can join adjacent vertices at the
+    // maximum support. A fixed minimum handle would overshoot those very short
+    // chords and make the two lanes loop across each other.
+    const handle = Math.min(155, chordLength * 0.28);
+    const forwardDepth = depth - (edge.role === "return" ? TWO_CYCLE_RETURN_DEPTH_PREMIUM : 0);
+    const sharedBowAmount = Math.min(36, forwardDepth * 0.24, chordLength * 0.06);
+    // A symmetric cubic's midpoint moves by 3/4 of its control-point bow.
+    const controlLaneGap = DISC_TWO_CYCLE_LANE_GAP / 0.75;
+    const shallowBowAmount = Math.max(2, sharedBowAmount - controlLaneGap / 2);
+    const bowAmount = shallowBowAmount + (edge.role === "return" ? controlLaneGap : 0);
+    const bow = scale(bendDirection, bowAmount);
+    control1 = add(add(start, scale(chordDirection, handle)), bow);
+    control2 = add(add(end, scale(chordDirection, -handle)), bow);
   } else {
     // Both handles use one polygon-interior normal. Unlike independent radial
     // handles, this cannot form an S-turn near either endpoint. Keeping the bow

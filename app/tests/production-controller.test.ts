@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { routeAnnularPermutation, serializeRoutedAnnularDiagram, type RoutedAnnularDiagram } from "../src/geometry/annular-routing";
 import { annularPermutationToString, parseAnnularPermutation, parseNoncrossingPartition, partitionToString } from "../src/math";
-import { annularResolutionMessage, processAnnularInput } from "../src/production/annularController";
+import { annularResolutionMessage, annularRoutingFailureMessage, processAnnularInput } from "../src/production/annularController";
 import { canonicalizeAnnularBlocks } from "../src/production/annularController";
 import { ProductionSurfaceState } from "../src/production/surfaceState";
 
@@ -43,13 +43,19 @@ describe("production mathematical mode controller", () => {
 
     const router = vi.fn((value): RoutedAnnularDiagram => {
       const admitted = routeAnnularPermutation(value);
-      return { isRoutable: false, permutation: value, reason: "search-limit-exceeded", diagnostics: admitted.diagnostics };
+      return {
+        isRoutable: false,
+        permutation: value,
+        reason: "search-limit-exceeded",
+        diagnostics: { ...admitted.diagnostics, searchNodes: 5, maxSearchNodes: 5, exhaustedResources: ["search-nodes"] },
+      };
     });
     const failed = processAnnularInput("1", "1", "(1 2)", router);
     expect(router).toHaveBeenCalledOnce();
     expect(!failed.ok && failed.error.kind).toBe("router-failure");
     expect(!failed.ok && failed.error.message).toContain("mathematically annular-noncrossing");
-    expect(!failed.ok && failed.error.message).toContain("search budget was exhausted");
+    expect(!failed.ok && failed.error.message).toContain("bounded router exhausted");
+    expect(!failed.ok && failed.error.routingFailure).toBeDefined();
 
     const thrown = processAnnularInput("1", "1", "(1 2)", () => { throw new Error("boom"); });
     expect(!thrown.ok && thrown.error.kind).toBe("router-failure");
@@ -72,6 +78,27 @@ describe("production mathematical mode controller", () => {
     presentation.switchTo("annular");
     expect(serializeRoutedAnnularDiagram(presentation.annular.routed)).toBe(identity);
     expect(router).toHaveBeenCalledOnce();
+  });
+
+  it("reports the exact exhausted governor dimensions and counter pairs", () => {
+    const parsed = parseAnnularPermutation("(1 2)", 1, 1);
+    if (!parsed.ok) throw new Error(parsed.error.kind);
+    const reference = routeAnnularPermutation(parsed.value);
+    const message = annularRoutingFailureMessage({
+      isRoutable: false,
+      permutation: parsed.value,
+      reason: "search-limit-exceeded",
+      diagnostics: {
+        ...reference.diagnostics,
+        materializedRouteCandidateCount: 19,
+        maxMaterializedRouteCandidates: 20,
+        materializedSamplePointCount: 499,
+        maxMaterializedSamplePoints: 500,
+        exhaustedResources: ["route-candidates", "sample-points"],
+      },
+    });
+    expect(message).toContain("route candidates (19/20 used; the next bundle did not fit)");
+    expect(message).toContain("sample points (499/500 used; the next bundle did not fit)");
   });
 
   it("resolves equal block supports to one explicit canonical orientation", () => {

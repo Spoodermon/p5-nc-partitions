@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
+import { createAnnularLayout, createCoverCubicAnnularRoute } from "../src/geometry/annular";
 import { routeAnnularPermutation } from "../src/geometry/annular-routing";
 import { parseAnnularPermutation } from "../src/math";
 import { annularDiagram } from "../src/renderer/annularModel";
-import { renderAnnularDiagram } from "../src/renderer/annularSvgRenderer";
+import { annularDirectionMarkerPath, renderAnnularDiagram } from "../src/renderer/annularSvgRenderer";
 import { assertExportIsVector, serializeFigure } from "../src/renderer/export";
 import { processAnnularInput } from "../src/production/annularController";
 
@@ -63,7 +64,8 @@ describe("production annular SVG renderer", () => {
       const svg = render(text, p, q, { showDirection: true, showRibbonFill: fill, cycleEdgeWidth: 4.6, outerBoundaryWidth: 3, innerBoundaryWidth: 2 });
       const serialized = serializeFigure(svg);
       expect(() => assertExportIsVector(serialized)).not.toThrow();
-      expect(serialized).not.toMatch(/diagnostic|seam|collar|winding|<script|<foreignObject|<canvas|NaN|undefined/);
+      expect(serialized.replace(/data:font\/woff2;base64,[A-Za-z0-9+/=]+/g, "[font-data]"))
+        .not.toMatch(/diagnostic|seam|collar|winding|<script|<foreignObject|<canvas|NaN|undefined/);
       expect(serialized).toContain('data-boundary="inner"');
       expect(serialized.match(/data-cycle-edge/g)?.length).toBe(svg.querySelectorAll("[data-cycle-edge]").length);
       expect(serialized.match(/data-direction-marker/g)?.length).toBe(svg.querySelectorAll("[data-cycle-edge]").length);
@@ -84,5 +86,43 @@ describe("production annular SVG renderer", () => {
     const exported = serializeFigure(rendered.svg);
     expect(exported).toContain(accepted.resolvedNotation);
     expect(exported).not.toContain(accepted.sourceNotation);
+  });
+
+  it("renders two accessible cover-space controls for an editable selection and strips them from export", () => {
+    const routedModel = model("(1 4)(2)(3)(5)", 3, 2);
+    const editable = routedModel.routed.routes.find((candidate) => candidate.routeFamily === "cover-cubic");
+    if (!editable) throw new Error("missing editable route");
+    const container = document.createElement("div");
+    const rendered = renderAnnularDiagram(container, routedModel, {
+      showDirection: true, showRibbonFill: true, selectedEdgeId: editable.edge.id,
+      cycleEdgeWidth: 3.4, outerBoundaryWidth: 2.5, innerBoundaryWidth: 2.5,
+    }, { onSelect: () => undefined, onCurveEditCommit: () => undefined });
+    const handles = rendered.svg.querySelectorAll(".curve-control-handle");
+    expect(handles).toHaveLength(2);
+    expect(handles[0]?.getAttribute("role")).toBe("button");
+    expect(handles[0]?.getAttribute("aria-label")).toContain("use arrow keys");
+    expect(rendered.svg.querySelectorAll(".curve-control-hit-target")).toHaveLength(2);
+    expect(rendered.svg.querySelector('[data-editor-overlay="true"]')).not.toBeNull();
+    const exported = serializeFigure(rendered.svg);
+    expect(exported).not.toContain("data-editor-overlay");
+    expect(exported).not.toContain("curve-control-handle");
+    expect(exported).toContain("data-cycle-edge");
+  });
+
+  it("uses a nearby certified tangent when the cubic midpoint is stationary", () => {
+    const layout = createAnnularLayout(3, 2);
+    const start = layout.vertices[0]?.angle;
+    const end = layout.vertices[1]?.angle;
+    if (start === undefined || end === undefined) throw new Error("missing layout vertices");
+    const control1 = { theta: start + 0.6, u: 0.7 };
+    const control2 = { theta: start + control1.theta - end, u: control1.u };
+    const route = createCoverCubicAnnularRoute(layout, {
+      startLabel: 1, endLabel: 2, startLiftAngle: start, endLiftAngle: end,
+      control1, control2,
+    });
+    expect(Math.hypot(route.tangentAt(0.5).x, route.tangentAt(0.5).y)).toBeLessThan(1e-8);
+    const marker = annularDirectionMarkerPath(route);
+    expect(marker).not.toBeNull();
+    expect(marker).not.toMatch(/NaN|Infinity/);
   });
 });

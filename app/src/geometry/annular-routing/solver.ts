@@ -1,14 +1,14 @@
 import { ROUTING_POLICY } from "../../config/routingPolicy";
 import { isAnnularNoncrossing, type AnnularPermutation } from "../../math/annular";
 import { createAnnularLayout } from "../annular";
-import { consumeCandidateValidationCheck, createCandidateGenerationBudget, generateCycleBundles, type CandidateGenerationBudget } from "./bundles";
+import { consumeCandidateValidationCheck, createCandidateGenerationBudget, createCycleBundleFrontier, type CandidateGenerationBudget, type CycleBundleFrontier } from "./bundles";
 import { createCycleCorridors, seamHasPlanarPureSpans } from "./corridors";
 import { extractAnnularEdges } from "./edges";
 import { routesConflict } from "./intersections";
 import { annularPhaseCandidates, endpointPhasePenalty } from "./phase";
 import { annularSeamStates } from "./seams";
 import { verificationClearanceMargin, verifyRouteSet } from "./verification";
-import type { AnnularRouteCandidate, CycleRouteBundle, RoutedAnnularDiagram, RoutedAnnularFailure, RoutedAnnularSuccess, RoutingMetrics, RoutingOptions, ThroughRouteDiagnostic } from "./types";
+import type { AnnularRouteCandidate, CycleRouteBundle, RoutedAnnularDiagram, RoutedAnnularFailure, RoutedAnnularSuccess, RoutingExhaustedResource, RoutingMetrics, RoutingOptions, ThroughRouteDiagnostic } from "./types";
 
 export const DEFAULT_ROUTE_STROKE_WIDTH = ROUTING_POLICY.routeStrokeWidth;
 export const DEFAULT_VISUAL_GAP = ROUTING_POLICY.visualGap;
@@ -38,7 +38,6 @@ interface SearchBudget {
 function consumeSearchNode(budget: SearchBudget): boolean {
   if (budget.consumed >= budget.limit) { budget.exhausted = true; return false; }
   budget.consumed += 1;
-  if (budget.consumed >= budget.limit) budget.exhausted = true;
   return true;
 }
 
@@ -230,6 +229,23 @@ function reserveSandwichedSingletons(
   });
 }
 
+function takeBundleFrontiers(
+  frontiers: readonly CycleBundleFrontier[],
+  depth: number,
+  p: number,
+  q: number,
+): readonly (readonly CycleRouteBundle[])[] {
+  // Pull one equal-width layer from every corridor before asking any corridor
+  // for the next layer. This keeps route/point materialization interleaved
+  // with solving instead of letting an early corridor consume the call-wide
+  // governor before later corridors have one usable candidate.
+  return reserveSandwichedSingletons(frontiers.map((frontier) => frontier.take(depth)), p, q);
+}
+
+function frontierDepths(maximum: number, middle: number): readonly number[] {
+  return Object.freeze([...new Set([1, Math.min(maximum, middle), maximum])]);
+}
+
 function routingOptionsAreValid(options: RoutingOptions): boolean {
   const boundedDistance = (value: number | undefined, maximum: number = ROUTING_POLICY.maximumDistanceOption): boolean =>
     value === undefined || (Number.isFinite(value) && value >= 0 && value <= maximum);
@@ -310,13 +326,24 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
     verificationClearanceMargin: clearanceMargin,
     verificationMaximumDepth: ROUTING_POLICY.verificationMaxDepth,
     verificationMaximumSegmentsPerRoute: ROUTING_POLICY.verificationMaxSegmentsPerRoute,
+    requestedCommonEndpointRadius: endpointRadius,
   });
+  const exhaustedResources = (): readonly RoutingExhaustedResource[] => {
+    const exhausted: RoutingExhaustedResource[] = [];
+    if (budget.exhausted) exhausted.push("search-nodes");
+    if (generationBudget.exhaustedResource === "route-candidates" || generationBudget.exhaustedResource === "route-candidates-and-sample-points") exhausted.push("route-candidates");
+    if (generationBudget.exhaustedResource === "sample-points" || generationBudget.exhaustedResource === "route-candidates-and-sample-points") exhausted.push("sample-points");
+    if (generationBudget.exhaustedResource === "invalid-generation-budget") exhausted.push("invalid-generation-budget");
+    if (generationBudget.validationExhausted) exhausted.push("validation-checks");
+    return Object.freeze(exhausted);
+  };
   const resourceUsage = () => ({
     attemptedBundleCount: generationBudget.attemptedBundles,
     rejectedBundleCount: generationBudget.rejectedBundles,
     materializedRouteCandidateCount: generationBudget.materializedRoutes,
     materializedSamplePointCount: generationBudget.materializedPoints,
     bundleValidationChecks: generationBudget.validationChecks,
+    exhaustedResources: exhaustedResources(),
   });
   const governorExhausted = () => budget.exhausted || generationBudget.validationExhausted || generationBudget.exhausted;
   const fail = (reason: RoutedAnnularFailure["reason"], searchedPhaseCount: number, proof: "feasible" | "proven-infeasible" | "not-proven" = "not-proven"): RoutedAnnularFailure => Object.freeze({
@@ -344,7 +371,7 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
         attemptedSeams += 1;
         if (!seamHasPlanarPureSpans(value, seam)) { topologicalRejections += 1; continue; }
         const corridors = createCycleCorridors(value, seam);
-        const generatedBundleSets = corridors.map((corridor) => generateCycleBundles(
+        const frontiers = corridors.map((corridor) => createCycleBundleFrontier(
           layout,
           seam,
           corridor,
@@ -356,13 +383,19 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
           endpointRadius,
           generationBudget,
         ));
-        const bundleSets = reserveSandwichedSingletons(generatedBundleSets, value.p, value.q);
-        let solution = solveGreedyBundleState(singletonFirst(bundleSets), searchHard, endpointRadius, budget, generationBudget);
-        let verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
-        if (!verified?.ok) {
+        let solution: StateSolution | null = null;
+        let verified: ReturnType<typeof verifyRouteSet> | null = null;
+        for (const frontierDepth of frontierDepths(materializationCandidateLimit, 4)) {
+          const bundleSets = takeBundleFrontiers(frontiers, frontierDepth, value.p, value.q);
+          solution = solveGreedyBundleState(singletonFirst(bundleSets), searchHard, endpointRadius, budget, generationBudget);
+          verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
+          if (verified?.ok) break;
           if (solution) { verificationRejected = true; lastVerificationFailure = verified; }
           solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget, generationBudget);
           verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
+          if (verified?.ok) break;
+          if (solution) { verificationRejected = true; lastVerificationFailure = verified; }
+          if (governorExhausted() || frontiers.every((frontier) => frontier.exhausted)) break;
         }
         if (!solution) { if (governorExhausted()) return fail("search-limit-exceeded", phaseIndex + 1); continue; }
         if (!verified?.ok) { verificationRejected = true; lastVerificationFailure = verified; continue; }
@@ -405,18 +438,24 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
     for (const seam of [...annularSeamStates(layout)].reverse().slice(0, 6)) {
       if (!seamHasPlanarPureSpans(value, seam)) continue;
       const corridors = createCycleCorridors(value, seam);
-      const generatedBundleSets = corridors.map((corridor) => generateCycleBundles(
+      const frontiers = corridors.map((corridor) => createCycleBundleFrontier(
         layout, seam, corridor,
         edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex),
         Math.min(Math.max(heuristicSampleCount, 17), 33), "all", materializationCandidateLimit, searchHard, endpointRadius, generationBudget,
       ));
-      const bundleSets = reserveSandwichedSingletons(generatedBundleSets, value.p, value.q);
-      let solution = solveGreedyBundleState(singletonFirst(bundleSets), searchHard, endpointRadius, budget, generationBudget);
-      let verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
-      if (!verified?.ok) {
+      let solution: StateSolution | null = null;
+      let verified: ReturnType<typeof verifyRouteSet> | null = null;
+      for (const frontierDepth of frontierDepths(materializationCandidateLimit, 4)) {
+        const bundleSets = takeBundleFrontiers(frontiers, frontierDepth, value.p, value.q);
+        solution = solveGreedyBundleState(singletonFirst(bundleSets), searchHard, endpointRadius, budget, generationBudget);
+        verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
+        if (verified?.ok) break;
         if (solution) { verificationRejected = true; lastVerificationFailure = verified; }
         solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget, generationBudget);
         verified = solution ? verifyRouteSet(solution.routes, layout, hard, endpointRadius) : null;
+        if (verified?.ok) break;
+        if (solution) { verificationRejected = true; lastVerificationFailure = verified; }
+        if (governorExhausted() || frontiers.every((frontier) => frontier.exhausted)) break;
       }
       if (!solution) { if (governorExhausted()) return fail("search-limit-exceeded", fastPhases.length); continue; }
       if (!verified?.ok) { verificationRejected = true; lastVerificationFailure = verified; continue; }
@@ -446,27 +485,34 @@ export function routeAnnularPermutation(value: AnnularPermutation, options: Rout
         // This prevents all principal phases from consuming the call budget
         // before a feasible non-principal route at an early seam is examined.
         for (const allowNonPrincipalThrough of [false, true]) {
-          const bundleSets = corridors.map((corridor) => {
+          const frontiers = Object.freeze(corridors.map((corridor) => {
             const policy = corridor.kind !== "through" || allowNonPrincipalThrough ? "all" : "principal-only";
-            return generateCycleBundles(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), Math.max(heuristicSampleCount, 17), policy, candidateTier, searchHard, endpointRadius, generationBudget);
-          });
-          const verificationExcluded = new Set<CycleRouteBundle>();
+            return createCycleBundleFrontier(layout, seam, corridor, edges.filter((edge) => edge.cycleIndex === corridor.cycleIndex), Math.max(heuristicSampleCount, 17), policy, candidateTier, searchHard, endpointRadius, generationBudget);
+          }));
           let solution: StateSolution | null = null;
           let verified: ReturnType<typeof verifyRouteSet> | null = null;
-          for (let verificationAttempt = 0; verificationAttempt < candidateTier; verificationAttempt += 1) {
-            solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget, generationBudget, verificationExcluded);
-            if (!solution) break;
-            verified = verifyRouteSet(solution.routes, layout, hard, endpointRadius);
-            if (verified.ok) break;
-            verificationRejected = true;
-            lastVerificationFailure = verified;
-            const secondEdgeId = verified.analysis?.worstPair?.secondEdgeId;
-            const firstEdgeId = verified.analysis?.worstPair?.firstEdgeId;
-            const offending = solution.bundles.find((bundle) => bundle.routes.some((route) => route.edge.id === secondEdgeId))
-              ?? solution.bundles.find((bundle) => bundle.routes.some((route) => route.edge.id === firstEdgeId))
-              ?? solution.bundles[solution.bundles.length - 1];
-            if (!offending || verificationExcluded.has(offending)) break;
-            verificationExcluded.add(offending);
+          const depths = candidateTier === candidateTiers[0]
+            ? frontierDepths(candidateTier, 4)
+            : [candidateTier];
+          for (const frontierDepth of depths) {
+            const bundleSets = frontiers.map((frontier) => frontier.take(frontierDepth));
+            const verificationExcluded = new Set<CycleRouteBundle>();
+            for (let verificationAttempt = 0; verificationAttempt < frontierDepth; verificationAttempt += 1) {
+              solution = solveBundleState(bundleSets, searchHard, endpointRadius, budget, generationBudget, verificationExcluded);
+              if (!solution) break;
+              verified = verifyRouteSet(solution.routes, layout, hard, endpointRadius);
+              if (verified.ok) break;
+              verificationRejected = true;
+              lastVerificationFailure = verified;
+              const secondEdgeId = verified.analysis?.worstPair?.secondEdgeId;
+              const firstEdgeId = verified.analysis?.worstPair?.firstEdgeId;
+              const offending = solution.bundles.find((bundle) => bundle.routes.some((route) => route.edge.id === secondEdgeId))
+                ?? solution.bundles.find((bundle) => bundle.routes.some((route) => route.edge.id === firstEdgeId))
+                ?? solution.bundles[solution.bundles.length - 1];
+              if (!offending || verificationExcluded.has(offending)) break;
+              verificationExcluded.add(offending);
+            }
+            if (verified?.ok || governorExhausted()) break;
           }
           if (!solution) { if (governorExhausted()) return fail("search-limit-exceeded", phaseIndex + 1, "not-proven"); continue; }
           if (!verified?.ok) continue;
@@ -516,10 +562,23 @@ export function serializeRoutedAnnularDiagram(diagram: RoutedAnnularDiagram): st
   const diagnostics = {
     outcome: diagram.isRoutable ? "success" : diagram.reason,
     requestedHardClearance: diagram.diagnostics.requestedHardClearance,
+    requestedCommonEndpointRadius: diagram.diagnostics.requestedCommonEndpointRadius,
     verifiedMinimumClearance: diagram.diagnostics.minimumClearance,
     maxSearchNodes: diagram.diagnostics.maxSearchNodes,
     searchNodes: diagram.diagnostics.searchNodes,
+    maxMaterializedRouteCandidates: diagram.diagnostics.maxMaterializedRouteCandidates,
+    materializedRouteCandidateCount: diagram.diagnostics.materializedRouteCandidateCount,
+    maxMaterializedSamplePoints: diagram.diagnostics.maxMaterializedSamplePoints,
+    materializedSamplePointCount: diagram.diagnostics.materializedSamplePointCount,
+    maxBundleValidationChecks: diagram.diagnostics.maxBundleValidationChecks,
+    bundleValidationChecks: diagram.diagnostics.bundleValidationChecks,
+    attemptedBundleCount: diagram.diagnostics.attemptedBundleCount,
+    rejectedBundleCount: diagram.diagnostics.rejectedBundleCount,
+    searchedCandidateCount: diagram.diagnostics.searchedCandidateCount,
+    exhaustedResources: diagram.diagnostics.exhaustedResources,
     principalSearchProof: diagram.diagnostics.principalSearchProof,
+    manualGeometryOverride: diagram.diagnostics.manualGeometryOverride,
+    manualEditCount: diagram.diagnostics.manualEditCount,
   };
   const data = diagram.isRoutable ? { p: diagram.permutation.p, q: diagram.permutation.q, phase: Number(diagram.phase.toFixed(12)), outerSeam: diagram.outerSeam, innerSeam: diagram.innerSeam, cycles: diagram.corridors.map((corridor) => ({ cycle: `(${corridor.cycle.join(" ")})`, corridor: corridor.kind, nestingDepth: corridor.nestingDepth })), routes: diagram.routes.map((route) => ({ edge: `${route.edge.startLabel}->${route.edge.endLabel}`, winding: route.winding, principalWinding: route.principalWinding, angularDisplacement: route.route.angularDisplacement, principalAngularDisplacement: route.principalAngularDisplacement, routeLength: route.routeLength, lane: route.lane, excursion: route.excursion, angularBias: route.angularBias, routeFamily: route.routeFamily })), principalThroughFallbackUsed: diagram.diagnostics.principalThroughFallbackUsed, diagnostics } : { p: diagram.permutation.p, q: diagram.permutation.q, failure: diagram.reason, diagnostics };
   return JSON.stringify(data, null, 2);

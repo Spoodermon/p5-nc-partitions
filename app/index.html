@@ -24,7 +24,7 @@
             <label for="disc-input">Partition</label>
             <input id="disc-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="disc-message" />
             <button id="disc-random-button" class="secondary-button" type="button">Random NC</button>
-            <label for="disc-n">n<input id="disc-n" class="size-input" type="text" inputmode="numeric" maxlength="32" autocomplete="off" /></label>
+            <label class="support-size-control" for="disc-n">n<input id="disc-n" class="size-input" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" /></label>
             <button type="submit">Render</button>
           </form>
           <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="disc-display-mode" value="partition" checked /> π</label><label><input type="radio" name="disc-display-mode" value="kreweras" /> Kr(π)</label></fieldset>
@@ -35,8 +35,9 @@
           <form id="annular-form" class="annular-form">
             <label class="annular-notation" for="annular-input">Permutation<input id="annular-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="annular-message" /></label>
             <button id="annular-random-button" class="secondary-button" type="button">Random ANC</button>
-            <label for="annular-p">p<input id="annular-p" type="text" inputmode="numeric" maxlength="32" autocomplete="off" aria-describedby="annular-message" /></label>
-            <label for="annular-q">q<input id="annular-q" type="text" inputmode="numeric" maxlength="32" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label class="annular-distribution" for="annular-random-distribution">Distribution<select id="annular-random-distribution"><option value="sparse">Sparse</option><option value="balanced" selected>Balanced</option><option value="dense">Dense</option></select></label>
+            <label class="support-size-control" for="annular-p">p<input id="annular-p" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label class="support-size-control" for="annular-q">q<input id="annular-q" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" aria-describedby="annular-message" /></label>
             <button type="submit">Render</button>
           </form>
           <fieldset class="interpretation-toggle"><legend>Interpret input as</legend><label><input type="radio" name="annular-input-interpretation" value="strict-permutation" checked /> Strict permutation</label><label><input type="radio" name="annular-input-interpretation" value="canonical-blocks" /> Canonical block set / auto-orient</label></fieldset>
@@ -47,25 +48,33 @@
       </section>
       <section class="workspace">
         <aside class="side-panel thickness-controls" aria-label="Line thickness controls">
-          <h2>Line weights</h2>
-          <label>Cycle edges<input id="cycle-edge-thickness" type="range" min="1" max="8" step="0.2" value="3.4" /><output id="cycle-edge-thickness-output" for="cycle-edge-thickness">3.4</output></label>
-          <label>Outer boundary<input id="outer-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="outer-boundary-thickness-output" for="outer-boundary-thickness">2.5</output></label>
-          <label id="inner-boundary-control" hidden>Inner boundary<input id="inner-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="inner-boundary-thickness-output" for="inner-boundary-thickness">2.5</output></label>
-          <label class="font-control" for="number-font">Number font<select id="number-font"><option value="Newsreader">Newsreader</option><option value="Geist">Geist Sans</option><option value="Geist Mono">Geist Mono</option></select></label>
-          <div class="selection-summary" aria-live="polite"><output id="selection-output">No edge selected</output><button id="clear-button" type="button" disabled>Clear</button></div>
+          <details class="settings-disclosure">
+            <summary><h2>Line weights</h2></summary>
+            <div class="settings-disclosure-content thickness-options">
+              <label>Cycle edges<input id="cycle-edge-thickness" type="range" min="1" max="8" step="0.2" value="3.4" /><output id="cycle-edge-thickness-output" for="cycle-edge-thickness">3.4</output></label>
+              <label>Outer boundary<input id="outer-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="outer-boundary-thickness-output" for="outer-boundary-thickness">2.5</output></label>
+              <label id="inner-boundary-control" hidden>Inner boundary<input id="inner-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="inner-boundary-thickness-output" for="inner-boundary-thickness">2.5</output></label>
+              <label class="font-control" for="number-font">Number font<select id="number-font"><option value="Newsreader">Newsreader</option><option value="Geist">Geist Sans</option><option value="Geist Mono">Geist Mono</option></select></label>
+            </div>
+          </details>
+          <div class="selection-summary" aria-live="polite"><output id="selection-output">No edge selected</output><div class="selection-actions"><button id="undo-curve-button" type="button" hidden disabled>Undo curve</button><button id="reset-curve-button" type="button" hidden disabled>Reset curve</button><button id="clear-button" type="button" disabled>Clear</button></div></div>
         </aside>
         <div id="figure-shell" class="figure-shell">
           <div id="figure" class="figure" aria-label="Permutation diagram"></div>
           <button id="export-button" class="icon-button canvas-download" type="button" aria-label="Download SVG" title="Download SVG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4" /></svg></button>
         </div>
         <aside class="side-panel color-controls" aria-label="Cycle colour controls">
-          <h2>Cycle colours</h2>
-          <label class="field-label" for="color-mode">Assignment<select id="color-mode"><option value="palette">Palette</option><option value="single">One colour</option><option value="kind">By annular kind</option><option value="custom">Per cycle</option></select></label>
-          <div id="palette-options" class="palette-options" aria-label="Named palettes"></div>
-          <label id="single-color-control" class="color-row" hidden>All cycles<input id="single-color" type="color" value="#176b75" /></label>
-          <div id="kind-color-controls" hidden><label class="color-row">Outer–outer<input id="outer-cycle-color" type="color" value="#176b75" /></label><label class="color-row">Inner–inner<input id="inner-cycle-color" type="color" value="#a35428" /></label><label class="color-row">Through<input id="through-cycle-color" type="color" value="#62549a" /></label></div>
-          <div id="cycle-color-controls" class="cycle-color-list" hidden></div>
-          <label class="check-control fill-control"><input id="ribbon-fill-toggle" type="checkbox" />Ribbon fill</label>
+          <details class="settings-disclosure">
+            <summary><h2>Cycle colours</h2></summary>
+            <div class="settings-disclosure-content">
+              <label class="field-label" for="color-mode">Assignment<select id="color-mode"><option value="palette">Palette</option><option value="single">One colour</option><option value="kind">By annular kind</option><option value="custom">Per cycle</option></select></label>
+              <div id="palette-options" class="palette-options" aria-label="Named palettes"></div>
+              <label id="single-color-control" class="color-row" hidden>All cycles<input id="single-color" type="color" value="#176b75" /></label>
+              <div id="kind-color-controls" hidden><label class="color-row">Outer–outer<input id="outer-cycle-color" type="color" value="#176b75" /></label><label class="color-row">Inner–inner<input id="inner-cycle-color" type="color" value="#a35428" /></label><label class="color-row">Through<input id="through-cycle-color" type="color" value="#62549a" /></label></div>
+              <div id="cycle-color-controls" class="cycle-color-list" hidden></div>
+              <label class="check-control fill-control"><input id="ribbon-fill-toggle" type="checkbox" />Ribbon fill</label>
+            </div>
+          </details>
         </aside>
       </section>
     </main>

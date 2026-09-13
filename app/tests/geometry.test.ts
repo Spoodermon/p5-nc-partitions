@@ -251,7 +251,10 @@ describe("curved edge grammar", () => {
           const nearSharedEndpoint = sharedPoints.some((point) => [a.points[ai]!, a.points[ai + 1]!, b.points[bi]!, b.points[bi + 1]!]
             .some((sample) => Math.hypot(sample.x - point.x, sample.y - point.y) < 30));
           if (nearSharedEndpoint) continue;
-          expect(properIntersection(a.points[ai]!, a.points[ai + 1]!, b.points[bi]!, b.points[bi + 1]!), `${notation}: ${a.edge.start}->${a.edge.end} crosses ${b.edge.start}->${b.edge.end}`).toBe(false);
+          // Keep the exhaustive scan cheap: build an assertion only on failure.
+          if (properIntersection(a.points[ai]!, a.points[ai + 1]!, b.points[bi]!, b.points[bi + 1]!)) {
+            expect.fail(`${notation}: ${a.edge.start}->${a.edge.end} crosses ${b.edge.start}->${b.edge.end}`);
+          }
         }
       }
     }

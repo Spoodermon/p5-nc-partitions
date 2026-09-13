@@ -1,46 +1,66 @@
-# Permutation Visualizer
+# Non-crossing Disc Partitions and Annular Permutations Generator
 
-The canonical production application is [`app/`](app/). It visualizes disc noncrossing partitions and oriented annular noncrossing permutations, their Kreweras complements, and exports the live diagram as SVG.
+An interactive visualization tool for generating and exporting non-crossing disc partitions and non-crossing annular permutations.
 
-The former p5 implementation is preserved only as historical source under [`legacy/p5/`](legacy/p5/); it is not built or deployed.
+This project helps study the combinatorics underlying free probability, and to explore/study these objects and their Kreweras complements.
 
-## Development
+Enter your own partition or permutation, or generate one at random. Inspect its Kreweras complement, adjust the diagram, and export it as an SVG for use in mathematical work.
+
+## Examples
+
+The following figures were generated and exported directly from the application.
+
+| Disc partition, n = 12 | Annular permutation, (p, q) = (5, 3) |
+| :---: | :---: |
+| [<img src="docs/examples/disc-nc.png" width="420" alt="Non-crossing disc partition with blocks of sizes one, two, three, and four">](docs/examples/disc-nc.svg) | [<img src="docs/examples/annular-nc.png" width="420" alt="Non-crossing annular permutation with three cycles joining the boundaries and one fixed point">](docs/examples/annular-nc.svg) |
+| `(1 4)(2 3)(5 7 8 12)(6)(9 10 11)` | `(1 8)(2)(3 4 7)(5 6)` |
+
+Select either figure to open its SVG.
+
+## Disc input
+
+Enter a set partition as parenthesized blocks, for example:
+
+```text
+(1 4)(2 3)(5 7 8 12)(6)(9 10 11)
+```
+
+Every label from 1 to n must occur exactly once. Order within a block does not matter: `(1 3 2)` and `(3 1 2)` represent the same block.
+
+For the Kreweras complement, each block is read as an increasing cycle, with K(π) = π⁻¹γₙ and γₙ = (1 … n).
+
+## Annular input
+
+Choose p labels on the outer boundary and q on the inner boundary, then enter an oriented permutation. For (p, q) = (5, 3):
+
+```text
+(1 8)(2)(3 4 7)(5 6)
+```
+
+The outer labels are 1–5 and the inner labels are 6–8. Cycle orientation matters: `(1 2 3)` and `(1 3 2)` are different permutations. Cyclic rotations represent the same cycle, and omitted labels are fixed points.
+
+The complement is K(τ) = τ⁻¹γ, where γ = (1 … p)(p+1 … p+q). Products act from right to left.
+
+The optional **Canonical block set / auto-orient** mode treats the input as unordered blocks and searches for a non-crossing orientation. **Random ANC** generates a connected annular permutation; **No singleton cycles** excludes fixed points.
+
+## Install and run
+
+With Node.js 22.12 or later installed, run these commands from the repository folder:
 
 ```sh
 cd app
 npm ci
-npx playwright install chromium
 npm run dev
 ```
 
-Vite serves the application at `http://localhost:5173/`.
+Open [localhost:5173](http://localhost:5173/) in your browser.
 
-## Verification
+## Planned improvements
 
-```sh
-cd app
-npm test                 # fast unit/integration tier
-npm run test:slow        # deterministic routing stress fixtures
-npm run test:exhaustive  # full p+q <= 5 routing sweep
-npm run benchmark        # representative timing ceilings
-npm run test:release     # all tiers, browser checks, benchmarks, and production build
-npm run build
-npm run test:production  # built-site smoke check; run build first
-npm run preview         # http://localhost:4173/p5-nc-partitions/
-```
+- A “ghost” Kreweras complement overlay.
+- A grid for viewing multiple partitions or permutations at once.
 
-Production limits are centralized in `app/src/config/limits.ts`: disc support is at most 400; `p` and `q` are separate decimal fields, each at most 20; annular total support is at most 24; partition/permutation notation is at most 16,384 characters; and raw numeric field text is at most 32 characters before whitespace or leading-zero normalization. Whitespace-only annular notation denotes the identity permutation. Limit failures are reported as infrastructure limits, not mathematical rejection.
+## References
 
-Routing defaults are centralized in `app/src/config/routingPolicy.ts`: 9 phase candidates, 64 candidates per edge, 5,000 call-wide search nodes, at most 20,000 materialized route candidates, 500,000 materialized sample points, and 20,000 pair-validation checks. Programmatic options accept 2–65 phases, 1–64 candidates per edge, and 0–5,000 search nodes. Candidate heuristics use at most 25 samples while rendering defaults to 65 (`RoutingOptions` and candidate helpers accept 2–257; standalone sampling accepts 2–10,001). The hard clearance is 7.5, preferred clearance is 14, shared-endpoint radius is 24 (maximum 100), and analytical second-derivative verification uses tolerance 0.12 with tolerance-contracted endpoint clipping, a two-tolerance pairwise safety margin, and depth/segment bounds of 12/4,096. Continuous distance options are capped at 1,000 viewBox units.
-
-## Deployment
-
-GitHub Actions validates pull requests and pushes to `main`; only `main` builds are eligible for Pages deployment. The release suite tests both the development server and the built application, including its worker and SVG download. Production builds and previews use the project-site base `/p5-nc-partitions/`; local development uses `/`. Developer laboratories remain available under `/dev/` only in development and are excluded from `dist/`.
-
-## Rendering and background work
-
-User-requested annular canonicalization, routing, random generation and complements run in a cancellable worker. The previous admitted diagram stays visible. Cancel, changed mathematical inputs, surface changes, and newer requests terminate obsolete work; stage and attempt messages report actual worker activity. Complement caching retains at most eight diagrams. The fixed small startup example and direct programmatic math/geometry APIs remain synchronous.
-
-Disc diagrams try their visible curve style at every supported size. Crowded layouts that require the compact scaffold display an explicit readability notice; support up to 400 does not promise a legible figure at every density or viewport size. Long SVG captions are fitted or abbreviated, with full notation retained in the SVG description. Exported edges preserve the live non-scaling stroke behavior.
-
-Random ANC still uses at most four independently governed routing attempts. Building a known embedding alongside random generation remains future work. The [audit](docs/audits/2026-09-12/AUDIT.md) and [remediation notes](docs/audits/2026-09-13/REMEDIATION.md) document the current changes and remaining limits.
+- **James A. Mingo and Alexandru Nica.** [*Annular non-crossing permutations and partitions, and second-order asymptotics for random matrices.*](https://arxiv.org/abs/math/0303312) International Mathematics Research Notices **2004**, no. 28, 1413–1460.
+- **Philippe Biane.** [*Some properties of crossings and partitions.*](https://www.sciencedirect.com/science/article/pii/S0012365X96001392) Discrete Mathematics **175** (1997), 41–53.

@@ -7,6 +7,89 @@ const FONT_ALIASES = Object.freeze({
   "Geist Mono": "PVEmbeddedGeistMono",
 });
 
+test("surface choices use accessible topology icons and toolbar mathematics uses Geist Sans", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Non-crossing Diagrams");
+  const disc = page.getByRole("radio", { name: "Disc", exact: true });
+  const annular = page.getByRole("radio", { name: "Annular", exact: true });
+
+  await expect(disc).toBeVisible();
+  await expect(annular).toBeVisible();
+  await expect(page.locator('[data-surface-icon="disc"] circle')).toHaveCount(1);
+  await expect(page.locator('[data-surface-icon="annular"] circle')).toHaveCount(2);
+  expect(await page.locator(".surface-toggle label").allTextContents()).toEqual(["", ""]);
+
+  await annular.check();
+  for (const selector of ["#annular-message", "#annular-view-toggle"]) {
+    const family = await page.locator(selector).evaluate((element) => getComputedStyle(element).fontFamily);
+    expect(family).toContain("Geist Variable");
+  }
+});
+
+test("successful renders stay quiet and the requested controls use borderless surfaces", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByLabel("Library")).toBeVisible();
+  await expect(page.locator("#disc-message")).toBeHidden();
+
+  const borderless = [
+    "#example-select",
+    "#disc-input",
+    "#disc-random-button",
+    "#disc-n",
+    "#disc-view-toggle",
+    ".thickness-controls",
+    ".color-controls",
+  ];
+  for (const selector of borderless) {
+    const widths = await page.locator(selector).evaluate((element) => {
+      const style = getComputedStyle(element);
+      return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth];
+    });
+    expect(widths, `${selector} retains a bounding edge`).toEqual(["0px", "0px", "0px", "0px"]);
+  }
+
+  await page.locator("#disc-input").fill("(");
+  await page.locator("#disc-form button[type=submit]").click();
+  await expect(page.locator("#disc-message")).toBeVisible();
+  await expect(page.locator("#disc-message")).toHaveAttribute("data-state", "error");
+  await page.locator("#disc-input").fill("(1 2)");
+  await page.locator("#disc-form button[type=submit]").click();
+  await expect(page.locator("#disc-message")).toBeHidden();
+
+  await page.getByRole("radio", { name: "Annular", exact: true }).check();
+  await expect(page.locator("#annular-message")).toBeHidden();
+  for (const selector of ["#annular-input", "#annular-random-button", "#annular-p", "#annular-q", "#annular-view-toggle", ".interpretation-toggle", ".figure"]) {
+    expect(await page.locator(selector).evaluate((element) => getComputedStyle(element).borderTopWidth), `${selector} retains a bounding edge`).toBe("0px");
+  }
+});
+
+test("diagram backgrounds are colourable and can be exported transparently", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".color-controls summary").click();
+  await page.locator("#diagram-background-color").fill("#c8e6df");
+  await expect(page.locator('[data-diagram-background="true"]')).toHaveAttribute("fill", "#c8e6df");
+
+  await page.locator("#figure-shell").hover({ position: { x: 20, y: 20 } });
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-button").click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  if (!path) throw new Error("No coloured SVG download path");
+  const svg = await readFile(path, "utf8");
+  expect(svg).toContain('data-diagram-background="true"');
+  expect(svg).toContain('fill="#c8e6df"');
+
+  await page.locator("#transparent-background-toggle").check();
+  await expect(page.locator("#diagram-background-color")).toBeDisabled();
+  await expect(page.locator('[data-diagram-background="true"]')).toHaveCount(0);
+  await expect(page.locator('[data-boundary="outer"]')).toHaveAttribute("fill", "none");
+
+  await page.getByRole("radio", { name: "Annular", exact: true }).check();
+  await expect(page.locator('[data-diagram-background="true"]')).toHaveCount(0);
+  await expect(page.locator('[data-boundary="outer"]')).toHaveAttribute("fill", "none");
+  await expect(page.locator('[data-boundary="inner"]')).toHaveAttribute("fill", "none");
+});
+
 test("settings disclosures are initially closed and keyboard operable", async ({ page }) => {
   await page.goto("/");
   const lineWeights = page.locator(".thickness-controls .settings-disclosure");

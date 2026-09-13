@@ -33,6 +33,26 @@ test("selected annular cubics expose draggable verified controls with undo", asy
   await expect(page.locator("#annular-message")).toContainText("Curve adjusted and admitted");
 });
 
+test("outer and inner annular singleton loops expose genuine verified Bézier controls", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[name="surface-mode"][value="annular"]').check();
+
+  const outerSingleton = page.locator('[data-cycle="(2)"][data-role="singleton"]');
+  await outerSingleton.dispatchEvent("click");
+  await expect(page.locator(".curve-control-handle")).toHaveCount(2);
+  await expect(page.locator('[data-editor-overlay="true"] line')).toHaveCount(2);
+  const handle = page.locator('.curve-control-handle[data-control-index="1"]');
+  await handle.focus();
+  await handle.press("ArrowRight");
+  await expect(handle).toBeFocused();
+  await expect(page.locator("#annular-message")).toContainText("Curve adjusted and admitted");
+
+  const innerSingleton = page.locator('[data-cycle="(5)"][data-role="singleton"]');
+  await innerSingleton.dispatchEvent("click");
+  await expect(page.locator(".curve-control-handle")).toHaveCount(2);
+  await expect(page.locator('[data-editor-overlay="true"] line')).toHaveCount(2);
+});
+
 test("an invalid pointer release restores the exact prior curve", async ({ page }) => {
   await page.goto("/");
   await page.locator('input[name="surface-mode"][value="annular"]').check();

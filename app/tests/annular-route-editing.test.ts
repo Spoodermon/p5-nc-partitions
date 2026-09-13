@@ -10,6 +10,13 @@ function routedFixture() {
   return routed;
 }
 
+function singletonRoute(boundary: "outer" | "inner") {
+  const routed = routedFixture();
+  const candidate = routed.routes.find((route) => route.edge.role === "singleton" && route.edge.startBoundary === boundary);
+  if (!isEditableCoverCubic(candidate)) throw new Error(`missing editable ${boundary} singleton route`);
+  return { routed, candidate };
+}
+
 describe("annular cover-cubic editing", () => {
   it("preserves anchors and winding and admits a verified small control move", () => {
     const routed = routedFixture();
@@ -30,6 +37,49 @@ describe("annular cover-cubic editing", () => {
     expect(changed.winding).toBe(candidate.winding);
     expect(edited.routed.diagnostics.hardCollisionCount).toBe(0);
     expect(routed.routes.find((route) => route.edge.id === candidate.edge.id)?.route).toBe(candidate.route);
+  });
+
+  it.each(["outer", "inner"] as const)("edits an %s singleton while keeping its coincident anchor pinned and winding zero", (boundary) => {
+    const { routed, candidate } = singletonRoute(boundary);
+    const [start, control1, control2, end] = candidate.route.controlPoints;
+    expect(start).toEqual(end);
+    expect(candidate.winding).toBe(0);
+
+    const edited = verifyAnnularRouteControlEdit(routed, candidate.edge.id, {
+      control1: { theta: control1.theta + 0.002, u: control1.u },
+      control2,
+    });
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) return;
+    const changed = edited.routed.routes.find((route) => route.edge.id === candidate.edge.id);
+    expect(isEditableCoverCubic(changed)).toBe(true);
+    if (!isEditableCoverCubic(changed)) return;
+    expect(changed.route.controlPoints[0]).toEqual(start);
+    expect(changed.route.controlPoints[3]).toEqual(end);
+    expect(changed.route.controlPoints[0]).toEqual(changed.route.controlPoints[3]);
+    expect(changed.winding).toBe(0);
+    expect(edited.routed.diagnostics.hardCollisionCount).toBe(0);
+    expect(routed.routes.find((route) => route.edge.id === candidate.edge.id)?.route).toBe(candidate.route);
+  });
+
+  it("rejects collapsed and folded singleton controls without mutating the admitted route", () => {
+    const { routed, candidate } = singletonRoute("outer");
+    const [anchor, control1] = candidate.route.controlPoints;
+    const before = candidate.route;
+    const collapsed = verifyAnnularRouteControlEdit(routed, candidate.edge.id, {
+      control1: anchor,
+      control2: anchor,
+    });
+    expect(collapsed).toEqual({ ok: false, reason: "self-intersection" });
+
+    // Equal non-anchor handles make the closed cubic retrace the same branch
+    // on its return to the pinned singleton vertex.
+    const folded = verifyAnnularRouteControlEdit(routed, candidate.edge.id, {
+      control1,
+      control2: control1,
+    });
+    expect(folded).toEqual({ ok: false, reason: "self-intersection" });
+    expect(routed.routes.find((route) => route.edge.id === candidate.edge.id)?.route).toBe(before);
   });
 
   it("rejects a control move onto another edge without mutating the prior state", () => {
@@ -80,5 +130,22 @@ describe("annular cover-cubic editing", () => {
       { x: 2, y: 0.2 },
       { x: 3, y: 0.5 },
     ], 0)).toBe(false);
+  });
+
+  it("allows only the legitimate cyclic anchor contact of a closed singleton polyline", () => {
+    expect(routePolylineHasSelfContact([
+      { x: 0, y: 0 },
+      { x: 2, y: 2 },
+      { x: 4, y: 0 },
+      { x: 2, y: -2 },
+      { x: 0, y: 0 },
+    ], 0, true)).toBe(false);
+    expect(routePolylineHasSelfContact([
+      { x: 0, y: 0 },
+      { x: 2, y: 2 },
+      { x: 0, y: 2 },
+      { x: 2, y: 0 },
+      { x: 0, y: 0 },
+    ], 0, true)).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ npm run test:slow
 npm run test:exhaustive
 npm run test:release
 npm run build
+npm run test:production  # requires the production build
 npm run preview
 ```
 
@@ -34,6 +35,8 @@ Input denotes a **set partition**, not an oriented permutation. Blocks use paren
 The support must be exactly `[1,n]`; labels cannot repeat. Block contents are unordered mathematically, so `(1 3 2)` and `(3 1 2)` both canonicalize to `(1 2 3)`. Each canonical block is sorted increasingly, and blocks are sorted lexicographically.
 
 Rendering associates a canonical permutation to the partition: a block `{b₁ < … < bₖ}` becomes the directed cycle `(b₁ … bₖ)`. Arrays store images by zero-based JavaScript position, but all mathematical labels and permutation images remain 1-based.
+
+Dense inputs still try the normal visible curve style. If bounded style adjustment cannot certify it, the application identifies the compact fallback explicitly; some loops and paired edges may be indistinguishable at that density. The support ceiling of 400 is a computational limit, not a promise of readability at every viewport size.
 
 The Kreweras convention is:
 
@@ -55,6 +58,8 @@ Annular data denotes an **actual permutation**, not a set partition. Orientation
 
 Cyclic rotations such as `(1 3 2)`, `(3 2 1)`, and `(2 1 3)` denote the same cycle. Disjoint-cycle order is immaterial, and omitted labels are inferred as fixed points because `p` and `q` determine the complete support `[1,p+q]`.
 
+The optional **Canonical block set / auto-orient** mode treats each cycle as an unordered support. It tries ascending labels, then descending labels with the minimum label first, then the remaining cycles lexicographically. Blocks are processed by increasing minimum label. This policy depends only on the supports, so different typed orders of the same blocks select the same representative. Strict-permutation mode continues to preserve orientation. Search remains limited to 50,000 orientation candidates.
+
 The outer and inner mathematical label sets are:
 
 ```text
@@ -71,6 +76,8 @@ disconnected:  #(τ) + #(K_{p,q}(τ)) = p + q + 2
 ```
 
 `Random ANC` constructs an oriented connected annular-noncrossing permutation directly, with a through-cycle joining the two boundary orbits, and submits it using strict-permutation semantics. Sparse, Balanced, and Dense distributions control block density; supports of size 12 or more default to Sparse until the user explicitly chooses a mode. Routing uses at most four independently bounded attempts, progressively simplifies the sampled structure, and finishes with the deterministic connected ANC `(1 p+1)` plus fixed points. A failed random request never replaces the admitted figure.
+
+**No singleton cycles** instead requires a fixed-point-free result throughout generation and fallback; longer cycles remain allowed. Random ANC samples a family with one rooted through-cycle containing labels 1 and `p+1`, not the uniform distribution over all ANC permutations.
 
 The inner mathematical cycle remains `(p+1 … p+q)`. The production renderer places inner labels in the opposite screen-angular orientation without reversing the mathematical permutation.
 
@@ -132,9 +139,19 @@ The production renderer consumes the admitted routed diagram directly. Developer
 
 Disc geometry uses its admitted cubic Bézier arcs. Annular geometry comes from the deterministic global router and is sampled directly from each admitted route. Singleton fixed points remain visible loops and optional direction markers appear at curve midpoints.
 
-Selecting a non-singleton annular edge exposes its two logarithmic-cover cubic controls. Dragging previews the curve while its anchors and winding remain pinned. On release, the production adaptive verifier checks the complete route set and rejects self-contact or inter-edge collisions by restoring the previous immutable routed state. Accepted edits drive the ribbon fill and direction marker, persist in SVG export, and support a bounded 50-state undo history plus reset; the transient handles and guides are never exported. Search-plan scores are intentionally omitted once geometry is manually overridden, while clearance and through-route geometry diagnostics are recomputed. This first version does not edit disc curves or annular singleton loops.
+Selecting a disc edge or annular cover-cubic edge, including singleton loops, exposes its two Bézier controls. Dragging previews the curve while its anchors and annular winding remain pinned. On release, production verification rejects self-contact or inter-edge collisions by restoring the previous immutable routed state. Accepted edits drive the ribbon fill and direction marker, persist in SVG export, and support a bounded 50-state undo history plus reset; the transient handles and guides are never exported. Search-plan scores are intentionally omitted once annular geometry is manually overridden, while clearance and through-route geometry diagnostics are recomputed. Complement views are inspectable but not editable.
 
 SVG export serializes the same live SVG DOM used on screen. It removes transient selection state but does not recompute geometry or include raster content. The selected Newsreader, Geist, or Geist Mono Latin variable face is embedded as WOFF2 data and assigned to every exported text node, so a standalone SVG does not depend on an installed font or a network request.
+
+Essential edge styling, including `vector-effect="non-scaling-stroke"`, is stored on SVG elements and survives export. Long captions fit within 900 viewBox units and are abbreviated above 80 characters; their complete text remains in the SVG description and accessible caption label. Export is disabled during unverified curve previews and pending routing.
+
+## Background routing
+
+All user-requested annular interpretation, random generation, routing and complement computation runs in a module worker. Progress messages identify the current stage or random attempt, without inventing a percentage. Cancel terminates the worker even while a synchronous search is running inside it. Editing mathematical inputs, changing surfaces or starting a newer request also cancels obsolete work. Only the current request may replace the admitted state. Failed requests and worker failures retain the previous figure and persistent error message.
+
+The worker transfers verified samples and route constructor data; the UI reconstructs identical curve evaluation functions without repeating the search. The admitted objects are frozen after transfer. Complement caching uses an eight-entry LRU policy. Initializing the fixed small example and direct programmatic APIs remain synchronous; disc construction and curve-edit verification also remain on the UI thread.
+
+Production preview is available at `http://localhost:4173/p5-nc-partitions/`. `npm run test:production` checks the built page, assets, worker routing and SVG download using that same base. `npm run test:release` builds before running this check. Pull requests run validation; Pages publication is restricted to `main`.
 
 ## SVG export
 
@@ -144,10 +161,7 @@ The download icon serializes the current live SVG DOM in either mode. Export pre
 
 The bounded router may still report a dimension-specific exhaustion for a mathematically valid larger permutation; diagnostics identify search nodes, route candidates, sample points, or pair-validation checks with their used/limit counters.
 
-Two architectural follow-ups are intentionally deferred:
-
-1. Construct a routing witness/embedding alongside random permutation generation, so routeability is available by construction rather than discovered by a later search.
-2. Move routing to a worker with cancellation, progress events, and opt-in larger budgets while keeping the current main-thread governors as the production default.
+Constructing a routing witness/embedding alongside random permutation generation remains deferred, so routeability is still discovered by bounded search. Worker execution does not expand the supported sizes or budgets. Broader browser and illustration-tool compatibility checks, save/load recipes and seeded user-facing examples remain future work.
 
 A later direct-construction editor may start from an annulus skeleton: click a vertex, drag a constrained edge to successive vertices, close a ribbon, and let new ribbons request deformation space from existing ones. That feature needs a constraint solver, stable edit history, and explicit topology semantics; it is not approximated by the current two-control editor.
 

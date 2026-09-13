@@ -30,6 +30,31 @@ function edgePaths(svg: SVGSVGElement): readonly string[] {
 }
 
 describe("production annular SVG renderer", () => {
+  it("supports an exportable full-viewBox background and transparent annular boundaries", () => {
+    const fixture = ["(1 4)(2)(3)(5)", 3, 2] as const;
+    const legacy = render(...fixture);
+    expect(legacy.querySelector('[data-diagram-background="true"]')).toBeNull();
+    expect(legacy.querySelector('[data-boundary="outer"]')?.getAttribute("fill")).toBe("#fffdf9");
+    expect(legacy.querySelector('[data-boundary="inner"]')?.getAttribute("fill")).toBe("#edf1f3");
+
+    const colored = render(...fixture, { backgroundColor: "#c0ffee" });
+    const background = colored.querySelector<SVGRectElement>('[data-diagram-background="true"]');
+    expect(background?.getAttribute("width")).toBe("1000");
+    expect(background?.getAttribute("height")).toBe("1000");
+    expect(background?.getAttribute("fill")).toBe("#c0ffee");
+    expect(colored.querySelector('[data-boundary="outer"]')?.getAttribute("fill")).toBe("none");
+    expect(colored.querySelector('[data-boundary="inner"]')?.getAttribute("fill")).toBe("#edf1f3");
+    expect(serializeFigure(colored)).toContain('data-diagram-background="true"');
+
+    const transparent = render(...fixture, { backgroundColor: null });
+    expect(transparent.querySelector('[data-diagram-background="true"]')).toBeNull();
+    expect(transparent.querySelector('[data-boundary="outer"]')?.getAttribute("fill")).toBe("none");
+    expect(transparent.querySelector('[data-boundary="inner"]')?.getAttribute("fill")).toBe("none");
+    expect(transparent.querySelector('[data-boundary="outer"]')?.hasAttribute("stroke")).toBe(true);
+    expect(transparent.querySelector('[data-boundary="inner"]')?.hasAttribute("stroke")).toBe(true);
+    expect(serializeFigure(transparent)).not.toContain("data-diagram-background");
+  });
+
   it("preserves exact edge paths across fill, arrows, widths, and selection", () => {
     const fixture = ["(1 4)(2)(3)(5)", 3, 2] as const;
     const plain = render(...fixture);
@@ -107,6 +132,22 @@ describe("production annular SVG renderer", () => {
     expect(exported).not.toContain("data-editor-overlay");
     expect(exported).not.toContain("curve-control-handle");
     expect(exported).toContain("data-cycle-edge");
+  });
+
+  it.each(["outer", "inner"] as const)("renders two controls for a selected %s singleton loop", (boundary) => {
+    const routedModel = model("(1 4)(2)(3)(5)", 3, 2);
+    const singleton = routedModel.routed.routes.find((candidate) => candidate.edge.role === "singleton" && candidate.edge.startBoundary === boundary);
+    if (!singleton) throw new Error(`missing ${boundary} singleton route`);
+    const container = document.createElement("div");
+    const rendered = renderAnnularDiagram(container, routedModel, {
+      showDirection: false, showRibbonFill: true, selectedEdgeId: singleton.edge.id,
+      cycleEdgeWidth: 3.4, outerBoundaryWidth: 2.5, innerBoundaryWidth: 2.5,
+    }, { onSelect: () => undefined, onCurveEditCommit: () => undefined });
+    const selected = rendered.svg.querySelector(`[data-edge-id="${singleton.edge.id}"]`);
+    expect(selected?.getAttribute("data-role")).toBe("singleton");
+    expect(rendered.svg.querySelectorAll(".curve-control-handle")).toHaveLength(2);
+    expect(rendered.svg.querySelectorAll(".curve-control-hit-target")).toHaveLength(2);
+    expect(rendered.svg.querySelectorAll('[data-layer="curve-editor"] line')).toHaveLength(2);
   });
 
   it("uses a nearby certified tangent when the cubic midpoint is stationary", () => {

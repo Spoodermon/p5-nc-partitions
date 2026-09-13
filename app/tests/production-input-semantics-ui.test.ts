@@ -29,6 +29,9 @@ describe("annular input interpretation UI", () => {
     for (const selector of ["#disc-n", "#annular-p", "#annular-q"]) {
       expect(document.querySelector<HTMLInputElement>(selector)?.size).toBe(3);
     }
+    const noSingletons = document.querySelector<HTMLInputElement>("#annular-exclude-singletons");
+    expect(noSingletons?.checked).toBe(false);
+    expect(noSingletons?.closest("label")?.textContent).toContain("No singleton cycles");
   });
 
   it("reports raw numeric length failures accurately even for programmatic values", () => {

@@ -539,13 +539,24 @@ function* pureBundleSource(
     const selected = boundedCandidates(specs.sort((a, b) => a.localScore - b.localScore || a.key.localeCompare(b.key)), maxBundles);
     for (const { excursion, angularBias, localScore, key } of selected) {
       if (!reserveCandidateBundle(budget, 1, sampleCount)) break;
-      const route = createAnnularRoute(layout, {
+      const startAngle = layout.vertices[edge.startLabel - 1]?.angle;
+      if (startAngle === undefined) throw new Error("singleton vertex invariant violated");
+      const boundaryU = edge.startBoundary === "outer" ? 1 : 0;
+      const controlDepth = Math.min(1, excursion / 0.75);
+      const controlU = edge.startBoundary === "outer" ? boundaryU - controlDepth : boundaryU + controlDepth;
+      // A closed cubic with opposite angular handles and a shared radial lane
+      // is a genuine editable loop. The factors preserve the analytical
+      // singleton's maximum angular and midpoint radial excursions.
+      const controlAngle = 2 * Math.sqrt(3) * angularBias;
+      const route = createCoverCubicAnnularRoute(layout, {
         startLabel: edge.startLabel,
         endLabel: edge.endLabel,
-        excursion,
-        angularBias,
+        startLiftAngle: startAngle,
+        endLiftAngle: startAngle,
+        control1: { theta: startAngle + controlAngle, u: controlU },
+        control2: { theta: startAngle - controlAngle, u: controlU },
       });
-      const routed = candidate(layout, edge, route, 0, localScore, key, sampleCount, "analytical-bump");
+      const routed = candidate(layout, edge, route, 0, localScore, key, sampleCount, "cover-cubic");
       yield Object.freeze({ cycleIndex: corridor.cycleIndex, corridor, vertexLifts: lifts, routes: Object.freeze([routed]), score: routed.localScore, key: routed.key });
     }
     return;

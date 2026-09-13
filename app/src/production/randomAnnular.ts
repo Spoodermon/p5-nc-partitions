@@ -2,7 +2,9 @@ import { routeAnnularPermutation, type RoutedAnnularDiagram, type RoutedAnnularS
 import {
   annularPermutationToString,
   minimalConnectedAnnularNoncrossingPermutation,
+  minimalFixedPointFreeConnectedAnnularNoncrossingPermutation,
   randomConnectedAnnularNoncrossingPermutation,
+  type AnnularRandomConstraints,
   type AnnularPermutation,
   type AnnularRandomDensity,
   type RandomSource,
@@ -49,8 +51,9 @@ function densitySchedule(mode: AnnularRandomMode, p: number, q: number): readonl
 
 /**
  * Try connected ANC structures from the requested distribution, progressively
- * simplifying within fixed attempt/time bounds. A deterministic through
- * transposition is always tried last, even after the soft elapsed-time limit.
+ * simplifying within fixed attempt/time bounds. A deterministic connected
+ * candidate is always tried last, even after the soft elapsed-time limit;
+ * strict singleton-free mode uses a fixed-point-free candidate throughout.
  */
 export function routeAwareRandomAnnularPermutation(
   p: number,
@@ -58,9 +61,12 @@ export function routeAwareRandomAnnularPermutation(
   mode: AnnularRandomMode = "auto",
   random: RandomSource = Math.random,
   router: AnnularRandomRouter = routeAnnularPermutation,
+  constraints: AnnularRandomConstraints = {},
 ): RouteAwareRandomAnnularResult {
   if (!["auto", "sparse", "balanced", "dense"].includes(mode)) throw new RangeError("unknown annular random mode");
   const schedule = densitySchedule(mode, p, q);
+  const singletonCycles = constraints.singletonCycles ?? "allow";
+  if (singletonCycles !== "allow" && singletonCycles !== "forbid") throw new RangeError("unknown singleton-cycle constraint");
   const started = performance.now();
   const seen = new Set<string>();
   let attempts = 0;
@@ -93,14 +99,16 @@ export function routeAwareRandomAnnularPermutation(
 
   for (const density of schedule.slice(0, Math.max(0, RANDOM_ANNULAR_ROUTING_POLICY.maximumAttempts - 1))) {
     if (attempts > 0 && performance.now() - started >= RANDOM_ANNULAR_ROUTING_POLICY.maximumElapsedMilliseconds) break;
-    const result = tryCandidate(randomConnectedAnnularNoncrossingPermutation(p, q, random, density), density);
+    const result = tryCandidate(randomConnectedAnnularNoncrossingPermutation(p, q, random, density, constraints), density);
     if (result) return result;
     if (terminalFailure) return Object.freeze({ ok: false, requestedMode: mode, attempts, lastFailure });
   }
 
   // A fixed bridge between the two boundary orbits is the lowest-complexity
   // genuine connected ANC. It is a fallback in geometry, not in mathematics.
-  const deterministicSparse = minimalConnectedAnnularNoncrossingPermutation(p, q);
+  const deterministicSparse = singletonCycles === "forbid"
+    ? minimalFixedPointFreeConnectedAnnularNoncrossingPermutation(p, q)
+    : minimalConnectedAnnularNoncrossingPermutation(p, q);
   const fallback = tryCandidate(deterministicSparse, "sparse", true);
   if (fallback) return fallback;
   return Object.freeze({ ok: false, requestedMode: mode, attempts, lastFailure });

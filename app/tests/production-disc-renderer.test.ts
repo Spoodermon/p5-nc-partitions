@@ -3,6 +3,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { parseDiscPartition } from "../src/math/parser";
 import { partitionDiagram } from "../src/renderer/model";
 import { renderDiagram } from "../src/renderer/svgRenderer";
+import { createDiscGeometryState } from "../src/geometry/disc-editing";
+import { serializeFigure } from "../src/renderer/export";
 
 const REPORTED_NOTATION = "(1 2 3 5 7 8 12)(4)(6)(9 11)(10)";
 
@@ -36,6 +38,28 @@ function twoCyclePaths(svg: SVGSVGElement): readonly SVGPathElement[] {
 }
 
 describe("production disc SVG renderer", () => {
+  it("supports an exportable full-viewBox background and a truly transparent boundary", () => {
+    const legacy = render();
+    expect(legacy.querySelector('[data-diagram-background="true"]')).toBeNull();
+    expect(legacy.querySelector('[data-boundary="outer"]')?.getAttribute("fill")).toBe("#fffdf9");
+
+    const colored = render({ backgroundColor: "#c0ffee" });
+    const background = colored.querySelector<SVGRectElement>('[data-diagram-background="true"]');
+    expect(background?.getAttribute("x")).toBe("0");
+    expect(background?.getAttribute("y")).toBe("0");
+    expect(background?.getAttribute("width")).toBe("1000");
+    expect(background?.getAttribute("height")).toBe("1000");
+    expect(background?.getAttribute("fill")).toBe("#c0ffee");
+    expect(colored.querySelector('[data-boundary="outer"]')?.getAttribute("fill")).toBe("none");
+    expect(serializeFigure(colored)).toContain('data-diagram-background="true"');
+
+    const transparent = render({ backgroundColor: null });
+    expect(transparent.querySelector('[data-diagram-background="true"]')).toBeNull();
+    expect(transparent.querySelector('[data-boundary="outer"]')?.getAttribute("fill")).toBe("none");
+    expect(transparent.querySelector('[data-boundary="outer"]')?.hasAttribute("stroke")).toBe(true);
+    expect(serializeFigure(transparent)).not.toContain("data-diagram-background");
+  });
+
   it("renders the reported two-cycle as two directed edges around a nondegenerate fill", () => {
     const diagram = model();
     const cycleIndex = diagram.cycles.findIndex((cycle) => cycle.length === 2 && cycle[0] === 9 && cycle[1] === 11);
@@ -75,5 +99,27 @@ describe("production disc SVG renderer", () => {
       expect(paths.map((path) => path.getAttribute("d"))).toEqual([...baseline.values()]);
       expect(paths.filter((path) => path.classList.contains("is-selected")).map((path) => path.getAttribute("data-edge-id"))).toEqual([edgeId]);
     }
+  });
+
+  it("exposes the two true cubic controls only when an admitted edge is selected for editing", () => {
+    const state = createDiscGeometryState(model());
+    const edgeId = state.routes[0]?.edge.id;
+    if (!edgeId) throw new Error("Missing editable edge");
+    const container = document.createElement("div");
+    const svg = renderDiagram(container, state, {
+      showDirection: true,
+      showRibbonFill: true,
+      selectedEdgeId: edgeId,
+      cycleEdgeWidth: 3.4,
+      outerBoundaryWidth: 2.5,
+    }, {
+      onSelect: () => undefined,
+      onCurveEditCommit: () => undefined,
+    }).svg;
+
+    expect(svg.querySelectorAll(".curve-control-handle")).toHaveLength(2);
+    expect(svg.querySelectorAll(".curve-control-hit-target")).toHaveLength(2);
+    expect(svg.querySelector('[data-editor-overlay="true"]')).not.toBeNull();
+    expect(svg.querySelector('[data-control-index="1"]')?.getAttribute("aria-label")).toContain("Bézier control 1");
   });
 });

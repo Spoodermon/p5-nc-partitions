@@ -10,6 +10,9 @@ import { segmentDistance } from "./intersections";
 import { verifyRouteSet } from "./verification";
 import type { AnnularRouteCandidate, RoutedAnnularSuccess } from "./types";
 
+const MIN_SINGLETON_AREA = 36;
+const MIN_SINGLETON_DIAMETER = 8;
+
 export interface CoverCubicControlEdit {
   readonly control1: CoverCubicControlPoint;
   readonly control2: CoverCubicControlPoint;
@@ -21,7 +24,6 @@ export type AnnularRouteEditResult =
 
 export function isEditableCoverCubic(candidate: AnnularRouteCandidate | undefined): candidate is AnnularRouteCandidate & { readonly route: CoverCubicAnnularRoute } {
   return candidate?.routeFamily === "cover-cubic"
-    && candidate.edge.role !== "singleton"
     && (candidate.route as { readonly family?: unknown }).family === "cover-cubic";
 }
 
@@ -82,6 +84,7 @@ function segmentsTouch(
 export function routePolylineHasSelfContact(
   samples: readonly Point[],
   approximationTolerance: number = ROUTING_POLICY.verificationTolerance,
+  closed = false,
 ): boolean {
   if (!Number.isFinite(approximationTolerance) || approximationTolerance < 0
     || samples.length < 2
@@ -90,17 +93,38 @@ export function routePolylineHasSelfContact(
   // Adjacent pieces share a sample by construction. Every non-adjacent pair,
   // including i/i+2, is checked for exact crossing or overlap. More separated
   // pieces additionally reserve the analytical two-tolerance error margin.
-  for (let first = 0; first < samples.length - 1; first += 1) {
+  const segmentCount = samples.length - 1;
+  for (let first = 0; first < segmentCount; first += 1) {
     for (let second = first + 2; second < samples.length - 1; second += 1) {
+      const forwardSeparation = second - first;
+      const separation = closed ? Math.min(forwardSeparation, segmentCount - forwardSeparation) : forwardSeparation;
+      // A closed singleton's first and last segments meet at its one pinned
+      // anchor and are adjacent in the cyclic segment order.
+      if (separation <= 1) continue;
       const a = samples[first] as { readonly x: number; readonly y: number };
       const b = samples[first + 1] as { readonly x: number; readonly y: number };
       const c = samples[second] as { readonly x: number; readonly y: number };
       const d = samples[second + 1] as { readonly x: number; readonly y: number };
       if (segmentsTouch(a, b, c, d)) return true;
-      if (second >= first + 3 && segmentDistance(a, b, c, d) <= margin) return true;
+      if (separation >= 3 && segmentDistance(a, b, c, d) <= margin) return true;
     }
   }
   return false;
+}
+
+function singletonIsVisible(samples: readonly Point[]): boolean {
+  let diameter = 0;
+  let twiceArea = 0;
+  for (let first = 0; first < samples.length; first += 1) {
+    const current = samples[first];
+    const next = samples[first + 1];
+    if (current && next) twiceArea += current.x * next.y - current.y * next.x;
+    for (let second = first + 1; second < samples.length; second += 1) {
+      const other = samples[second];
+      if (current && other) diameter = Math.max(diameter, Math.hypot(current.x - other.x, current.y - other.y));
+    }
+  }
+  return diameter >= MIN_SINGLETON_DIAMETER && Math.abs(twiceArea / 2) >= MIN_SINGLETON_AREA;
 }
 
 /**
@@ -141,7 +165,12 @@ export function verifyAnnularRouteControlEdit(
   const verified = verifyRouteSet(candidates, routed.layout, hardClearance, commonEndpointRadius);
   if (!verified.ok) return Object.freeze({ ok: false, reason: verified.analysis ? "collision" as const : "verification-failed" as const });
   const verifiedEdit = verified.routes[index];
-  if (!verifiedEdit || routePolylineHasSelfContact(verifiedEdit.samples)) {
+  const singleton = current.edge.role === "singleton";
+  if (!verifiedEdit || routePolylineHasSelfContact(
+    verifiedEdit.samples,
+    ROUTING_POLICY.verificationTolerance,
+    singleton,
+  ) || (singleton && !singletonIsVisible(verifiedEdit.samples))) {
     return Object.freeze({ ok: false, reason: "self-intersection" as const });
   }
   const throughRoutes = Object.freeze(verified.routes.flatMap((candidate) => {

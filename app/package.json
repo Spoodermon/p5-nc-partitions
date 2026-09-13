@@ -8,11 +8,12 @@
     "build": "tsc --noEmit && vite build && npm run verify:dist",
     "verify:dist": "node scripts/verify-dist.mjs",
     "preview": "vite preview",
-    "test": "vitest run --exclude 'e2e/**' --exclude '**/*.slow.test.ts' --exclude '**/*.exhaustive.test.ts' --exclude '**/*.benchmark.test.ts'",
+    "test": "vitest run --exclude 'e2e/**' --exclude 'e2e-production/**' --exclude '**/*.slow.test.ts' --exclude '**/*.exhaustive.test.ts' --exclude '**/*.benchmark.test.ts'",
     "test:slow": "vitest run tests/*.slow.test.ts",
     "test:exhaustive": "vitest run tests/*.exhaustive.test.ts",
-    "test:release": "npm test && npm run test:slow && npm run test:browser && npm run benchmark && npm run test:exhaustive && npm run build",
+    "test:release": "npm test && npm run test:slow && npm run test:browser && npm run benchmark && npm run test:exhaustive && npm run build && npm run test:production",
     "test:browser": "playwright test",
+    "test:production": "playwright test --config playwright.production.config.ts",
     "benchmark": "vitest run --disableConsoleIntercept tests/*.benchmark.test.ts"
   },
   "dependencies": {

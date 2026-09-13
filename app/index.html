@@ -9,41 +9,42 @@
   <body>
     <main class="shell">
       <header class="heading">
-        <h1>Curved permutation diagrams</h1>
+        <h1>Non-crossing Diagrams</h1>
         <fieldset class="surface-toggle" aria-label="Mathematical surface">
-          <label><input type="radio" name="surface-mode" value="disc" checked /><span>Disc</span></label>
-          <label><input type="radio" name="surface-mode" value="annular" /><span>Annular</span></label>
+          <label title="Disc"><input type="radio" name="surface-mode" value="disc" aria-label="Disc" checked /><span aria-hidden="true"><svg class="surface-icon" data-surface-icon="disc" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="8" /></svg></span></label>
+          <label title="Annular"><input type="radio" name="surface-mode" value="annular" aria-label="Annular" /><span aria-hidden="true"><svg class="surface-icon" data-surface-icon="annular" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /></svg></span></label>
         </fieldset>
       </header>
       <section class="toolbar" aria-label="Diagram controls">
-        <label class="example-control">Example<select id="example-select"></select></label>
-        <label class="check-control"><input id="direction-toggle" type="checkbox" />Show direction</label>
+        <label class="example-control">Library<select id="example-select"></select></label>
 
         <div id="disc-controls" class="mode-inputs">
           <form id="disc-form" class="notation-form">
-            <label for="disc-input">Partition</label>
-            <input id="disc-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="disc-message" />
+            <label class="support-size-control" for="disc-n"><span class="support-size-label">n</span><input id="disc-n" class="size-input" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" /></label>
             <button id="disc-random-button" class="secondary-button" type="button">Random NC</button>
-            <label class="support-size-control" for="disc-n">n<input id="disc-n" class="size-input" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" /></label>
+            <label class="disc-notation" for="disc-input"><span>Partition</span><input id="disc-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="disc-message" /></label>
             <button type="submit">Render</button>
           </form>
-          <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="disc-display-mode" value="partition" checked /> π</label><label><input type="radio" name="disc-display-mode" value="kreweras" /> Kr(π)</label></fieldset>
+          <fieldset id="disc-view-toggle" class="view-toggle"><legend>Show</legend><label><input type="radio" name="disc-display-mode" value="partition" checked /> π</label><label><input type="radio" name="disc-display-mode" value="kreweras" /> Kr(π)</label><label id="direction-control" class="direction-control"><input id="direction-toggle" type="checkbox" />Directed</label></fieldset>
           <p id="disc-message" class="input-message" aria-live="polite"></p>
         </div>
 
         <div id="annular-controls" class="mode-inputs" hidden>
           <form id="annular-form" class="annular-form">
-            <label class="annular-notation" for="annular-input">Permutation<input id="annular-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label class="support-size-control" for="annular-p"><span class="support-size-label">p</span><input id="annular-p" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label class="support-size-control" for="annular-q"><span class="support-size-label">q</span><input id="annular-q" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" aria-describedby="annular-message" /></label>
+            <div class="annular-distribution" title="Sets the preferred cycle-size mix for Random ANC; routing may fall back to a sparser connected ANC when needed.">
+              <label for="annular-random-distribution">Distribution<select id="annular-random-distribution" aria-label="Random ANC cycle-size distribution"><option value="sparse">Sparse</option><option value="balanced" selected>Balanced</option><option value="dense">Dense</option></select></label>
+              <label class="exclude-singletons-control" title="Generate a fixed-point-free ANC. Cycles of length three or more are still allowed."><input id="annular-exclude-singletons" type="checkbox" />No singleton cycles</label>
+            </div>
             <button id="annular-random-button" class="secondary-button" type="button">Random ANC</button>
-            <label class="annular-distribution" for="annular-random-distribution">Distribution<select id="annular-random-distribution"><option value="sparse">Sparse</option><option value="balanced" selected>Balanced</option><option value="dense">Dense</option></select></label>
-            <label class="support-size-control" for="annular-p">p<input id="annular-p" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" aria-describedby="annular-message" /></label>
-            <label class="support-size-control" for="annular-q">q<input id="annular-q" type="text" inputmode="numeric" maxlength="32" size="3" autocomplete="off" aria-describedby="annular-message" /></label>
+            <label class="annular-notation" for="annular-input">Permutation<input id="annular-input" type="text" maxlength="16384" spellcheck="false" autocomplete="off" aria-describedby="annular-message" /></label>
             <button type="submit">Render</button>
           </form>
+          <fieldset id="annular-view-toggle" class="view-toggle"><legend>Show</legend><label><input type="radio" name="annular-display-mode" value="permutation" checked /> τ</label><label><input type="radio" name="annular-display-mode" value="kreweras" /> Kr(τ)</label></fieldset>
           <fieldset class="interpretation-toggle"><legend>Interpret input as</legend><label><input type="radio" name="annular-input-interpretation" value="strict-permutation" checked /> Strict permutation</label><label><input type="radio" name="annular-input-interpretation" value="canonical-blocks" /> Canonical block set / auto-orient</label></fieldset>
-          <fieldset class="view-toggle"><legend>Show</legend><label><input type="radio" name="annular-display-mode" value="permutation" checked /> τ</label><label><input type="radio" name="annular-display-mode" value="kreweras" /> Kr(τ)</label></fieldset>
           <p id="annular-message" class="input-message" aria-live="polite"></p>
-          <div id="routing-progress" class="routing-progress" hidden><progress aria-label="Annular routing progress"></progress><span id="routing-progress-label">Preparing routing search…</span></div>
+          <div id="routing-progress" class="routing-progress" hidden><progress aria-label="Annular routing progress"></progress><span id="routing-progress-label" aria-live="polite">Preparing routing search…</span><button id="cancel-routing-button" class="secondary-button" type="button">Cancel</button></div>
         </div>
       </section>
       <section class="workspace">
@@ -54,7 +55,10 @@
               <label>Cycle edges<input id="cycle-edge-thickness" type="range" min="1" max="8" step="0.2" value="3.4" /><output id="cycle-edge-thickness-output" for="cycle-edge-thickness">3.4</output></label>
               <label>Outer boundary<input id="outer-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="outer-boundary-thickness-output" for="outer-boundary-thickness">2.5</output></label>
               <label id="inner-boundary-control" hidden>Inner boundary<input id="inner-boundary-thickness" type="range" min="0.5" max="8" step="0.1" value="2.5" /><output id="inner-boundary-thickness-output" for="inner-boundary-thickness">2.5</output></label>
-              <label class="font-control" for="number-font">Number font<select id="number-font"><option value="Newsreader">Newsreader</option><option value="Geist">Geist Sans</option><option value="Geist Mono">Geist Mono</option></select></label>
+              <div class="vertex-controls">
+                <label class="font-control" for="number-font">Number font<select id="number-font"><option value="Newsreader">Newsreader</option><option value="Geist">Geist Sans</option><option value="Geist Mono">Geist Mono</option></select></label>
+                <label>Dot size<input id="boundary-dot-size" type="range" min="4" max="30" step="1" value="17" /><output id="boundary-dot-size-output" for="boundary-dot-size">17</output></label>
+              </div>
             </div>
           </details>
           <div class="selection-summary" aria-live="polite"><output id="selection-output">No edge selected</output><div class="selection-actions"><button id="undo-curve-button" type="button" hidden disabled>Undo curve</button><button id="reset-curve-button" type="button" hidden disabled>Reset curve</button><button id="clear-button" type="button" disabled>Clear</button></div></div>
@@ -73,6 +77,10 @@
               <div id="kind-color-controls" hidden><label class="color-row">Outer–outer<input id="outer-cycle-color" type="color" value="#176b75" /></label><label class="color-row">Inner–inner<input id="inner-cycle-color" type="color" value="#a35428" /></label><label class="color-row">Through<input id="through-cycle-color" type="color" value="#62549a" /></label></div>
               <div id="cycle-color-controls" class="cycle-color-list" hidden></div>
               <label class="check-control fill-control"><input id="ribbon-fill-toggle" type="checkbox" />Ribbon fill</label>
+              <div class="background-options">
+                <label class="color-row background-color-control">Diagram background<input id="diagram-background-color" type="color" value="#fffdf9" /></label>
+                <label class="check-control transparent-background-control"><input id="transparent-background-toggle" type="checkbox" />Transparent</label>
+              </div>
             </div>
           </details>
         </aside>

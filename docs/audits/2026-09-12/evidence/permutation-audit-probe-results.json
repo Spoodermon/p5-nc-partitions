@@ -1,0 +1,40 @@
+{
+  "canonicalBlockMode": [
+    {
+      "input": "(1 2 3 4)",
+      "ok": true,
+      "resolved": "(1 2 3 4)"
+    },
+    {
+      "input": "(1 2 4 3)",
+      "ok": true,
+      "resolved": "(1 2 4 3)"
+    }
+  ],
+  "annularError": {
+    "before": "Permutation is not annular-noncrossing for (p,q)=(2,2).",
+    "after": {
+      "text": "",
+      "state": "valid",
+      "input": "(1 3 2 4)"
+    },
+    "previousFigure": "(1 4)(2)(3)(5), annular permutation (3,2)"
+  },
+  "denseDisc": {
+    "message": "",
+    "pathCount": 66,
+    "firstTwoCycleMidpointGap": 0.052046888484998895,
+    "svgWidth": 700,
+    "strokeWidth": "3.4px",
+    "vectorEffect": "non-scaling-stroke",
+    "captionBounds": {
+      "x": -622.6674194335938,
+      "width": 2245.3349609375
+    }
+  },
+  "singleton65": {
+    "width": 0.00836181640625,
+    "height": 0.055999755859375
+  },
+  "pageErrors": []
+}

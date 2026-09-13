@@ -25,6 +25,8 @@ npm run test:exhaustive  # full p+q <= 5 routing sweep
 npm run benchmark        # representative timing ceilings
 npm run test:release     # all tiers, browser checks, benchmarks, and production build
 npm run build
+npm run test:production  # built-site smoke check; run build first
+npm run preview         # http://localhost:4173/p5-nc-partitions/
 ```
 
 Production limits are centralized in `app/src/config/limits.ts`: disc support is at most 400; `p` and `q` are separate decimal fields, each at most 20; annular total support is at most 24; partition/permutation notation is at most 16,384 characters; and raw numeric field text is at most 32 characters before whitespace or leading-zero normalization. Whitespace-only annular notation denotes the identity permutation. Limit failures are reported as infrastructure limits, not mathematical rejection.
@@ -33,8 +35,12 @@ Routing defaults are centralized in `app/src/config/routingPolicy.ts`: 9 phase c
 
 ## Deployment
 
-GitHub Actions builds `app/` and deploys `app/dist/` to GitHub Pages. Production Vite builds use the project-site base `/p5-nc-partitions/`; local development uses `/`. Developer laboratories remain available under `/dev/` only in development and are excluded from `dist/`.
+GitHub Actions validates pull requests and pushes to `main`; only `main` builds are eligible for Pages deployment. The release suite tests both the development server and the built application, including its worker and SVG download. Production builds and previews use the project-site base `/p5-nc-partitions/`; local development uses `/`. Developer laboratories remain available under `/dev/` only in development and are excluded from `dist/`.
 
-## Current architectural debt
+## Rendering and background work
 
-Annular canonicalization and routing still run synchronously on the main thread. Random ANC routing is capped at four independently governed attempts and reports only honest attempt/budget information. Moving routing to a cancellable progress-reporting worker, and constructing a routing witness alongside future random generation, remain dedicated follow-ups rather than implicit changes to the current correctness governors.
+User-requested annular canonicalization, routing, random generation and complements run in a cancellable worker. The previous admitted diagram stays visible. Cancel, changed mathematical inputs, surface changes, and newer requests terminate obsolete work; stage and attempt messages report actual worker activity. Complement caching retains at most eight diagrams. The fixed small startup example and direct programmatic math/geometry APIs remain synchronous.
+
+Disc diagrams try their visible curve style at every supported size. Crowded layouts that require the compact scaffold display an explicit readability notice; support up to 400 does not promise a legible figure at every density or viewport size. Long SVG captions are fitted or abbreviated, with full notation retained in the SVG description. Exported edges preserve the live non-scaling stroke behavior.
+
+Random ANC still uses at most four independently governed routing attempts. Building a known embedding alongside random generation remains future work. The [audit](docs/audits/2026-09-12/AUDIT.md) and [remediation notes](docs/audits/2026-09-13/REMEDIATION.md) document the current changes and remaining limits.

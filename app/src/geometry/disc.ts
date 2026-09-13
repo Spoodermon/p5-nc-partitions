@@ -5,8 +5,35 @@ export const DISC_CENTER = { x: 500, y: 500 } as const;
 export const DISC_RADIUS = 370;
 // A geometry-level separation contract for the two directed sides of a
 // transposition ribbon. Responsive SVG scaling may change its on-screen size.
-export const DISC_TWO_CYCLE_LANE_GAP = 12;
-const TWO_CYCLE_RETURN_DEPTH_PREMIUM = 38;
+export const DISC_TWO_CYCLE_LANE_GAP = 36;
+// A verified layout may contract a ribbon when the preferred gap would collide
+// with another block. This preferred-style floor keeps its directed lanes
+// visibly distinct; the exact scaffold fallback has its own local gap proof.
+export const DISC_TWO_CYCLE_MIN_LANE_GAP = 4;
+const DISC_TWO_CYCLE_ABSOLUTE_MIN_LANE_GAP = 0.001;
+// A span-based radial depth inspired by the older visual grammar. The older
+// implementation made the list-closing edge dramatically deeper; here the
+// geometric boundary span alone determines depth, so rotating cycle notation
+// cannot introduce a visual seam.
+export const DISC_ADJACENT_CONTROL_RADIUS_RATIO = 0.72;
+export const DISC_MIN_CONTROL_RADIUS_RATIO = 0.48;
+export const DISC_CONTROL_RADIUS_STEP_PER_SPAN = 0.24;
+export const DISC_TWO_CYCLE_CONTROL_RADIUS_RATIO = 0.68;
+export const DISC_SINGLETON_CONTROL_RADIUS_RATIO = 0.8;
+const DISC_TWO_CYCLE_MAX_LANE_GAP = 140;
+const DISC_TWO_CYCLE_CHORD_GAP_RATIO = 0.32;
+export const DISC_CONTROL_CHORD_PROGRESS = 0.16;
+
+export interface DiscArcStyle {
+  /** Interpolates the preferred curved grammar toward its straight chord. */
+  readonly curvatureScale?: number;
+  /** Requested midpoint separation for the two sides of a transposition. */
+  readonly twoCycleLaneGap?: number;
+  /** Interpolates singleton handles toward their pinned boundary anchor. */
+  readonly singletonScale?: number;
+  /** Proof-oriented scaffold fallback uses 1/3; visual candidates use 0.16. */
+  readonly chordProgress?: number;
+}
 
 export interface Point {
   readonly x: number;
@@ -91,6 +118,21 @@ function cubicPathThroughMidpoint(start: Point, control1: Point, control2: Point
   ].join(" ");
 }
 
+export function createDiscArcFromControls(
+  start: Point,
+  end: Point,
+  control1: Point,
+  control2: Point,
+  depth: number,
+): ArcGeometry {
+  return Object.freeze({
+    depth,
+    control1: Object.freeze({ ...control1 }),
+    control2: Object.freeze({ ...control2 }),
+    path: cubicPathThroughMidpoint(start, control1, control2, end),
+  });
+}
+
 export function layoutVertices(vertexCount: number): readonly Vertex[] {
   if (!Number.isInteger(vertexCount) || vertexCount < 1) {
     throw new Error("vertexCount must be a positive integer");
@@ -164,34 +206,40 @@ function cyclicSeparation(start: number, end: number, vertexCount: number): numb
   return Math.min(direct, vertexCount - direct);
 }
 
-function cycleInteriorBend(start: Vertex, end: Vertex, edge: DirectedEdge, vertexCount: number): Point {
-  const chord = subtract(end, start);
-  const left = normalize({ x: -chord.y, y: chord.x });
-  let signedArea = 0;
-  for (const label of edge.cycle) {
-    if (label === edge.start || label === edge.end) continue;
-    const angle = -Math.PI / 2 + ((label - 1) * Math.PI * 2) / vertexCount;
-    const point = { x: DISC_CENTER.x + DISC_RADIUS * Math.cos(angle), y: DISC_CENTER.y + DISC_RADIUS * Math.sin(angle) };
-    signedArea += chord.x * (point.y - start.y) - chord.y * (point.x - start.x);
-  }
-  if (Math.abs(signedArea) > 1e-7) return scale(left, Math.sign(signedArea));
-  return normalize(subtract(DISC_CENTER, midpoint(start, end)));
+function controlRadiusRatio(edge: DirectedEdge, vertexCount: number): number {
+  if (edge.role === "singleton") return DISC_SINGLETON_CONTROL_RADIUS_RATIO;
+  if (edge.cycle.length === 2) return DISC_TWO_CYCLE_CONTROL_RADIUS_RATIO;
+  const separation = cyclicSeparation(edge.start, edge.end, vertexCount);
+  return Math.max(
+    DISC_MIN_CONTROL_RADIUS_RATIO,
+    DISC_ADJACENT_CONTROL_RADIUS_RATIO - Math.max(0, separation - 1) * DISC_CONTROL_RADIUS_STEP_PER_SPAN,
+  );
+}
+
+function pointAtRadius(angle: number, radiusRatio: number): Point {
+  return {
+    x: DISC_CENTER.x + DISC_RADIUS * radiusRatio * Math.cos(angle),
+    y: DISC_CENTER.y + DISC_RADIUS * radiusRatio * Math.sin(angle),
+  };
+}
+
+function inwardLaneDirection(start: Vertex, end: Vertex): Point {
+  // Midpoints determine the physically inward side except for a diameter.
+  const towardCenter = subtract(DISC_CENTER, midpoint(start, end));
+  return normalize(towardCenter);
+}
+
+function canonicalLaneDirection(start: Vertex, end: Vertex): Point {
+  // Label order supplies a canonical normal, so reversing two-cycle notation
+  // preserves the same unordered pair of lanes.
+  const low = start.id < end.id ? start : end;
+  const high = start.id < end.id ? end : start;
+  const canonicalChord = normalize(subtract(high, low));
+  return { x: -canonicalChord.y, y: canonicalChord.x };
 }
 
 export function arcDepth(edge: DirectedEdge, vertexCount: number): number {
-  if (edge.role === "singleton") return 54;
-  const separation = cyclicSeparation(edge.start, edge.end, vertexCount);
-  // Antipodal transpositions form a balanced two-sided lens. Their directed
-  // edges already bend to opposite sides of the diameter, so a shared depth
-  // gives the ribbon reflection symmetry instead of an oversized return side.
-  if (edge.cycle.length === 2 && separation * 2 === vertexCount) return 142;
-  const baseDepth = 58 + separation * 18;
-  // A polygonal cycle has no geometrically privileged closing edge. Equal
-  // cyclic spans therefore use equal curvature in either direction, which
-  // keeps the closing arc from folding back through its own cycle. A
-  // two-cycle alone needs a modest second lane so both directions stay visible.
-  if (edge.cycle.length === 2) return baseDepth + (edge.role === "return" ? TWO_CYCLE_RETURN_DEPTH_PREMIUM : 0);
-  return baseDepth;
+  return DISC_RADIUS * (1 - controlRadiusRatio(edge, vertexCount));
 }
 
 function cubicPoint(start: Point, control1: Point, control2: Point, end: Point, t: number): Point {
@@ -211,10 +259,21 @@ export function sampleDiscArc(start: Point, end: Point, geometry: ArcGeometry, s
   const curveMidpoint = midpoint(leftControl, rightControl);
   return Object.freeze(Array.from({ length: sampleCount }, (_, index) => {
     const progress = index / (sampleCount - 1);
-    return progress <= 0.5
+    return Object.freeze(progress <= 0.5
       ? cubicPoint(start, startToControl, leftControl, curveMidpoint, progress * 2)
-      : cubicPoint(curveMidpoint, rightControl, controlToEnd, end, (progress - 0.5) * 2);
+      : cubicPoint(curveMidpoint, rightControl, controlToEnd, end, (progress - 0.5) * 2));
   }));
+}
+
+function mix(first: Point, second: Point, amount: number): Point {
+  return add(first, scale(subtract(second, first), amount));
+}
+
+export function preferredTwoCycleLaneGap(start: Point, end: Point): number {
+  return Math.min(
+    DISC_TWO_CYCLE_MAX_LANE_GAP,
+    Math.max(DISC_TWO_CYCLE_LANE_GAP, magnitude(subtract(end, start)) * DISC_TWO_CYCLE_CHORD_GAP_RATIO),
+  );
 }
 
 export function makeDiscArc(
@@ -222,70 +281,74 @@ export function makeDiscArc(
   end: Vertex,
   edge: DirectedEdge,
   vertexCount: number,
+  style: DiscArcStyle = {},
 ): ArcGeometry {
   const chord = subtract(end, start);
-  const chordLength = magnitude(chord);
-  const chordDirection = normalize(chord);
-  const chordMidpoint = midpoint(start, end);
   const depth = arcDepth(edge, vertexCount);
-
-  let bendDirection = edge.cycle.length > 2
-    ? cycleInteriorBend(start, end, edge, vertexCount)
-    : normalize(subtract(DISC_CENTER, chordMidpoint));
+  const rawCurvatureScale = style.curvatureScale ?? 1;
+  const rawSingletonScale = style.singletonScale ?? 1;
+  const rawLaneGap = style.twoCycleLaneGap;
+  const rawChordProgress = style.chordProgress ?? DISC_CONTROL_CHORD_PROGRESS;
+  if (!Number.isFinite(rawCurvatureScale) || !Number.isFinite(rawSingletonScale)
+    || (rawLaneGap !== undefined && !Number.isFinite(rawLaneGap))
+    || !Number.isFinite(rawChordProgress) || rawChordProgress <= 0 || rawChordProgress >= 0.5) {
+    throw new Error("Disc arc style values must be finite");
+  }
+  const curvatureScale = Math.max(0, Math.min(1, rawCurvatureScale));
   let control1: Point;
   let control2: Point;
 
   if (edge.role === "singleton") {
-    const inward = normalize(subtract(DISC_CENTER, start));
-    const tangent = { x: -Math.sin(start.angle), y: Math.cos(start.angle) };
-    control1 = add(add(start, scale(tangent, 58)), scale(inward, depth));
-    control2 = add(add(start, scale(tangent, -58)), scale(inward, depth));
-    // Antipodal endpoints have no unique inward normal. A two-cycle deliberately
-    // assigns its two directions to opposite sides, producing a readable lens.
-  } else if (edge.cycle.length === 2 && magnitude(bendDirection) < 1e-9) {
-    const perpendicular = { x: -chordDirection.y, y: chordDirection.x };
-    bendDirection = perpendicular;
-    const handle = Math.min(155, Math.max(68, chordLength * 0.27));
-    const offset = scale(bendDirection, depth / 0.75);
-    control1 = add(add(start, scale(chordDirection, handle)), offset);
-    control2 = add(add(end, scale(chordDirection, -handle)), offset);
-  } else if (edge.cycle.length === 2) {
-    // Reversing a cubic swaps its endpoints and controls. If both directions
-    // use the same capped bow, they therefore describe the exact same locus;
-    // the thicker return stroke hides the forward stroke and the ribbon has
-    // zero area. Split a shared inward bow into two explicit lanes. Both stay
-    // on the interior side of the chord, including for short boundary chords.
-    if (magnitude(bendDirection) < 1e-9) bendDirection = { x: -chordDirection.y, y: chordDirection.x };
-    // Unlike polygon arcs, a two-cycle can join adjacent vertices at the
-    // maximum support. A fixed minimum handle would overshoot those very short
-    // chords and make the two lanes loop across each other.
-    const handle = Math.min(155, chordLength * 0.28);
-    const forwardDepth = depth - (edge.role === "return" ? TWO_CYCLE_RETURN_DEPTH_PREMIUM : 0);
-    const sharedBowAmount = Math.min(36, forwardDepth * 0.24, chordLength * 0.06);
-    // A symmetric cubic's midpoint moves by 3/4 of its control-point bow.
-    const controlLaneGap = DISC_TWO_CYCLE_LANE_GAP / 0.75;
-    const shallowBowAmount = Math.max(2, sharedBowAmount - controlLaneGap / 2);
-    const bowAmount = shallowBowAmount + (edge.role === "return" ? controlLaneGap : 0);
-    const bow = scale(bendDirection, bowAmount);
-    control1 = add(add(start, scale(chordDirection, handle)), bow);
-    control2 = add(add(end, scale(chordDirection, -handle)), bow);
+    // The original construction places a singleton's handles on the adjacent
+    // half-step rays at 80% radius. That makes loops scale with vertex density
+    // instead of overlapping at high support. n=1 uses quarter-turn handles so
+    // its only loop has nonzero area rather than collapsing onto a diameter.
+    const halfStep = Math.min(Math.PI / 2, Math.PI / vertexCount);
+    const singletonScale = Math.max(0, Math.min(1, rawSingletonScale));
+    control1 = mix(start, pointAtRadius(start.angle - halfStep, DISC_SINGLETON_CONTROL_RADIUS_RATIO), singletonScale);
+    control2 = mix(start, pointAtRadius(start.angle + halfStep, DISC_SINGLETON_CONTROL_RADIUS_RATIO), singletonScale);
   } else {
-    // Both handles use one polygon-interior normal. Unlike independent radial
-    // handles, this cannot form an S-turn near either endpoint. Keeping the bow
-    // bounded by the chord length also prevents long diagonals from sweeping
-    // through shorter edges of the same noncrossing block.
-    if (magnitude(bendDirection) < 1e-9) bendDirection = { x: -chordDirection.y, y: chordDirection.x };
-    const handle = Math.min(155, Math.max(54, chordLength * 0.28));
-    const bowAmount = Math.min(36, depth * 0.24, chordLength * 0.06);
-    const bow = scale(bendDirection, bowAmount);
-    control1 = add(add(start, scale(chordDirection, handle)), bow);
-    control2 = add(add(end, scale(chordDirection, -handle)), bow);
+    const ratio = controlRadiusRatio(edge, vertexCount);
+    const straightControl1 = add(start, scale(chord, rawChordProgress));
+    const straightControl2 = add(end, scale(chord, -rawChordProgress));
+    // The preferred visual candidate follows the older renderer's radial
+    // depth rhythm but adds chordwise endpoint progress. It is deliberately
+    // notation-symmetric; the whole-layout factory certifies it and backs off
+    // to the exact noncrossing scaffold when a dense arrangement needs less.
+    const preferredControl1 = add(pointAtRadius(start.angle, ratio), scale(chord, rawChordProgress));
+    const preferredControl2 = add(pointAtRadius(end.angle, ratio), scale(chord, -rawChordProgress));
+    control1 = mix(straightControl1, preferredControl1, curvatureScale);
+    control2 = mix(straightControl2, preferredControl2, curvatureScale);
+
+    if (edge.cycle.length === 2) {
+      // A non-diameter transposition uses two lanes on the geometrically inward
+      // side of its chord. This avoids sweeping an outward lane through blocks
+      // nested in the short boundary interval. The unordered pair of loci is
+      // unchanged when two-cycle notation is reversed; no closing edge gets a
+      // special stroke or a special curvature formula.
+      const targetGap = Math.max(
+        DISC_TWO_CYCLE_ABSOLUTE_MIN_LANE_GAP,
+        Math.min(preferredTwoCycleLaneGap(start, end), rawLaneGap ?? preferredTwoCycleLaneGap(start, end)),
+      );
+      const deepLane = edge.start > edge.end;
+      const inward = inwardLaneDirection(start, end);
+      if (magnitude(inward) > 1e-9) {
+        const sharedMidpointBow = curvatureScale * Math.min(36, magnitude(chord) * 0.06);
+        const midpointBow = sharedMidpointBow + (deepLane ? targetGap : 0);
+        const controlBow = scale(inward, midpointBow / 0.75);
+        control1 = add(straightControl1, controlBow);
+        control2 = add(straightControl2, controlBow);
+      } else {
+        // Diameters have no interior side, so a canonical two-sided lens is the
+        // only notation-invariant construction. Opposing control translations
+        // yield 3/2 of their magnitude as aligned midpoint separation.
+        const correction = scale(canonicalLaneDirection(start, end), targetGap / 1.5);
+        const signedCorrection = deepLane ? correction : scale(correction, -1);
+        control1 = add(straightControl1, signedCorrection);
+        control2 = add(straightControl2, signedCorrection);
+      }
+    }
   }
 
-  return {
-    depth,
-    control1,
-    control2,
-    path: cubicPathThroughMidpoint(start, control1, control2, end),
-  };
+  return createDiscArcFromControls(start, end, control1, control2, depth);
 }

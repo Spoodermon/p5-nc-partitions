@@ -30,7 +30,8 @@ function requireCoverPoint(point: CoverCubicControlPoint, name: string): void {
   }
 }
 
-function kind(start: "outer" | "inner", end: "outer" | "inner"): AnnularRouteKind {
+function kind(start: "outer" | "inner", end: "outer" | "inner", singleton: boolean): AnnularRouteKind {
+  if (singleton) return start === "outer" ? "outer-singleton" : "inner-singleton";
   if (start !== end) return "through";
   return start === "outer" ? "outer-outer" : "inner-inner";
 }
@@ -59,7 +60,7 @@ export function createCoverCubicAnnularRoute(
 ): CoverCubicAnnularRoute {
   const start = annularVertex(layout, options.startLabel);
   const end = annularVertex(layout, options.endLabel);
-  if (start.label === end.label) throw new RangeError("cover cubics do not represent singleton loops");
+  const singleton = start.label === end.label;
   requireCoverPoint(options.control1, "control1");
   requireCoverPoint(options.control2, "control2");
   if (!Number.isFinite(options.startLiftAngle) || !Number.isFinite(options.endLiftAngle)) {
@@ -106,18 +107,27 @@ export function createCoverCubicAnnularRoute(
   if (Math.abs(rawWinding - winding) > 1e-7 || Math.abs(options.startLiftAngle - start.angle) > 1e-7) {
     throw new RangeError("cover cubic lift angles must be canonical start plus an integral end deck shift");
   }
+  if (singleton && winding !== 0) throw new RangeError("singleton cover cubics require winding 0");
+  const controlExcursion = Math.max(
+    Math.abs(options.control1.u - startPoint.u),
+    Math.abs(options.control2.u - startPoint.u),
+  );
   return Object.freeze({
     family: "cover-cubic",
     controlPoints: controls,
-    kind: kind(start.boundary, end.boundary),
+    kind: kind(start.boundary, end.boundary, singleton),
     startLabel: start.label,
     endLabel: end.label,
     startBoundary: start.boundary,
     endBoundary: end.boundary,
     winding,
-    angularBias: ((options.control1.theta + options.control2.theta) - (startPoint.theta + endPoint.theta)) / 2,
-    excursion: start.boundary === end.boundary
-      ? Math.max(Math.abs(options.control1.u - startPoint.u), Math.abs(options.control2.u - startPoint.u))
+    angularBias: singleton
+      ? (options.control1.theta - options.control2.theta) / (4 * Math.sqrt(3))
+      : ((options.control1.theta + options.control2.theta) - (startPoint.theta + endPoint.theta)) / 2,
+    excursion: singleton
+      ? controlExcursion * 0.75
+      : start.boundary === end.boundary
+        ? controlExcursion
       : 0,
     startLiftAngle: startPoint.theta,
     endLiftAngle: endPoint.theta,

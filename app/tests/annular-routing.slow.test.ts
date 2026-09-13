@@ -374,7 +374,7 @@ describe("global annular routing", () => {
       if (!result.isRoutable) result = routeAnnularPermutation(created.value, { maxSearchNodes: 2_000 });
       expect(result.isRoutable, `${images.join(",")}: ${JSON.stringify(result.diagnostics)}`).toBe(true);
       if (result.isRoutable) for (const singleton of result.routes.filter((route) => route.edge.role === "singleton")) {
-        expect(Math.abs(singleton.angularBias)).toBeGreaterThanOrEqual(0.08);
+        expect(Math.abs(singleton.angularBias)).toBeGreaterThanOrEqual(0.08 - 1e-12);
         const start = singleton.route.pointAt(0);
         const maximumDisplacement = Math.max(...[0.25, 0.5, 0.75].map((t) => Math.hypot(singleton.route.pointAt(t).x - start.x, singleton.route.pointAt(t).y - start.y)));
         expect(maximumDisplacement).toBeGreaterThan(10);

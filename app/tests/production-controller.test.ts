@@ -122,6 +122,17 @@ describe("production mathematical mode controller", () => {
     expect(canonical && annularPermutationToString(canonical)).toMatchInlineSnapshot(`"(1 2 3)(4 6)(5)(7 8 9 12 13)(10 11)"`);
   });
 
+  it("chooses the same block representative when several typed orientations are valid", () => {
+    const notations = ["(1 2 3 4)", "(1 2 4 3)", "(3 4 2 1)", "(4 3 2 1)"];
+    const results = notations.map((notation) => processAnnularInput("2", "2", notation, routeAnnularPermutation, "canonical-blocks"));
+    for (const result of results) {
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.resolvedNotation).toBe("(1 2 3 4)");
+    }
+    const strict = processAnnularInput("2", "2", "(1 2 4 3)");
+    expect(strict.ok && strict.resolvedNotation).toBe("(1 2 4 3)");
+  });
+
   it("restores the last valid mathematical object when modes switch", () => {
     const disc = parseNoncrossingPartition("(1 4)(2 3)");
     const annular = processAnnularInput("3", "2", "(1 4)(2)(3)(5)");

@@ -83,13 +83,6 @@ export interface AutoOrientSearchResult {
   readonly maxOrientationCandidates: number;
 }
 
-function normalizeCycle(values: readonly number[]): readonly number[] {
-  if (values.length < 2) return Object.freeze([...values]);
-  const minimum = Math.min(...values);
-  const offset = values.indexOf(minimum);
-  return Object.freeze([...values.slice(offset), ...values.slice(0, offset)]);
-}
-
 function* permutationsLazy(values: readonly number[]): Generator<readonly number[]> {
   if (values.length < 2) { yield Object.freeze([...values]); return; }
   for (let index = 0; index < values.length; index += 1) {
@@ -99,12 +92,12 @@ function* permutationsLazy(values: readonly number[]): Generator<readonly number
   }
 }
 
-/** Natural boundary orders first, then a fully lazy deterministic enumeration. */
+/** Ascending then descending support order, followed by lexicographic cycles. */
 function* orientedCycles(block: readonly number[]): Generator<readonly number[]> {
-  if (block.length < 3) { yield Object.freeze([...block]); return; }
   const ordered = [...block].sort((a, b) => a - b);
+  if (ordered.length < 3) { yield Object.freeze(ordered); return; }
   const first = ordered[0] as number;
-  const preferred = [normalizeCycle(block), normalizeCycle([...block].reverse()), Object.freeze(ordered), Object.freeze([first, ...ordered.slice(1).reverse()])];
+  const preferred = [Object.freeze(ordered), Object.freeze([first, ...ordered.slice(1).reverse()])];
   const seen = new Set<string>();
   for (const cycle of preferred) {
     const key = cycle.join(",");

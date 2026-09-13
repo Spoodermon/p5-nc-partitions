@@ -2,6 +2,7 @@ import { SVG, type Path } from "@svgdotjs/svg.js";
 import { ANNULAR_VIEWBOX_SIZE, cartesianToCoverPoint, coverPointToCartesian, type AnnularRoute, type Point, type Vector } from "../geometry/annular";
 import { annularCycleFillRegions, createEditedCoverCubicRoute, isEditableCoverCubic, type AnnularDirectedEdge, type CoverCubicControlEdit } from "../geometry/annular-routing";
 import type { AnnularDiagramModel } from "./annularModel";
+import { renderCaption } from "./caption";
 
 export interface AnnularRenderOptions {
   readonly showDirection: boolean;
@@ -10,14 +11,23 @@ export interface AnnularRenderOptions {
   readonly cycleEdgeWidth: number;
   readonly outerBoundaryWidth: number;
   readonly innerBoundaryWidth: number;
+  /**
+   * A full-viewBox SVG background. Omit it for the legacy presentation, pass
+   * a colour to include an exportable background, or pass null for a truly
+   * transparent figure.
+   */
+  readonly backgroundColor?: string | null;
   readonly cycleColors?: readonly string[];
   readonly numberFont?: string;
+  /** Diameter of each boundary dot in SVG viewBox units. */
+  readonly boundaryDotSize?: number;
 }
 
 export interface AnnularRenderCallbacks {
-  readonly onSelect: (edge: AnnularDirectedEdge) => void;
+  readonly onSelect: (edge: AnnularDirectedEdge, restoreFocusToControl?: 1) => void;
   readonly onCurveEditCommit?: (edgeId: string, controls: CoverCubicControlEdit, restoreFocusToControl?: 1 | 2) => void;
-  readonly onCurveEditCancel?: () => void;
+  readonly onCurveEditCancel?: (restoreFocusToControl?: 1 | 2) => void;
+  readonly onCurvePreviewChange?: (active: boolean) => void;
 }
 
 export interface AnnularRenderResult {
@@ -114,14 +124,27 @@ export function renderAnnularDiagram(
   title.textContent = `${model.notation}, annular permutation (${model.permutation.p},${model.permutation.q})`;
   draw.node.prepend(title);
 
+  if (typeof options.backgroundColor === "string") {
+    draw.rect(ANNULAR_VIEWBOX_SIZE, ANNULAR_VIEWBOX_SIZE)
+      .move(0, 0)
+      .fill(options.backgroundColor)
+      .attr({ "data-diagram-background": "true", "pointer-events": "none" });
+  }
+
   const boundaryGroup = draw.group().attr({ "data-layer": "boundary" });
   const fillGroup = draw.group().attr({ "data-layer": "cycle-fills" });
   const edgeGroup = draw.group().attr({ "data-layer": "edges" });
   const markerGroup = draw.group().attr({ "data-layer": "direction-markers" });
   const vertexGroup = draw.group().attr({ "data-layer": "vertices" });
   const editorGroup = draw.group().attr({ "data-layer": "curve-editor", "data-editor-overlay": "true" });
-  boundaryGroup.circle(routed.layout.outerRadius * 2).center(500, 500).fill("#fffdf9").stroke({ color: "#aeb9c0", width: options.outerBoundaryWidth }).attr({ "data-boundary": "outer" });
-  boundaryGroup.circle(routed.layout.innerRadius * 2).center(500, 500).fill("#edf1f3").stroke({ color: "#aeb9c0", width: options.innerBoundaryWidth }).attr({ "data-boundary": "inner" });
+  boundaryGroup.circle(routed.layout.outerRadius * 2).center(500, 500)
+    .fill(options.backgroundColor === undefined ? "#fffdf9" : "none")
+    .stroke({ color: "#aeb9c0", width: options.outerBoundaryWidth })
+    .attr({ "data-boundary": "outer" });
+  boundaryGroup.circle(routed.layout.innerRadius * 2).center(500, 500)
+    .fill(options.backgroundColor === null ? "none" : "#edf1f3")
+    .stroke({ color: "#aeb9c0", width: options.innerBoundaryWidth })
+    .attr({ "data-boundary": "inner" });
 
   if (options.showRibbonFill) for (const region of annularCycleFillRegions(routed.routes)) {
     fillGroup.path(closedPath(region.points)).fill(colors[region.cycleIndex % colors.length] as string).opacity(0.14).stroke("none").attr({ "data-cycle-fill": String(region.cycleIndex) });
@@ -132,7 +155,7 @@ export function renderAnnularDiagram(
     const path = edgeGroup.path(sampledAnnularPath(candidate.route)).fill("none")
       .stroke({ color, width: options.cycleEdgeWidth, linecap: "round", linejoin: "round" })
       .addClass("permutation-edge")
-      .attr({ "data-edge-id": candidate.edge.id, "data-cycle-edge": candidate.edge.id });
+      .attr({ "data-edge-id": candidate.edge.id, "data-cycle-edge": candidate.edge.id, "vector-effect": "non-scaling-stroke" });
     labelEdge(path, candidate.edge, model);
     if (options.selectedEdgeId === candidate.edge.id) path.addClass("is-selected");
     if (options.showDirection) {
@@ -144,13 +167,13 @@ export function renderAnnularDiagram(
     path.on("click", () => callbacks.onSelect(candidate.edge));
     path.on("keydown", (event: Event) => {
       const key = (event as KeyboardEvent).key;
-      if (key === "Enter" || key === " ") { event.preventDefault(); callbacks.onSelect(candidate.edge); }
+      if (key === "Enter" || key === " ") { event.preventDefault(); callbacks.onSelect(candidate.edge, 1); }
     });
   });
 
   routed.layout.vertices.forEach((vertex) => {
     const color = vertex.boundary === "outer" ? "#285f6b" : "#9a552d";
-    vertexGroup.circle(15).center(vertex.boundaryPoint.x, vertex.boundaryPoint.y).fill(color).stroke({ color: "white", width: 2 });
+    vertexGroup.circle(options.boundaryDotSize ?? 15).center(vertex.boundaryPoint.x, vertex.boundaryPoint.y).fill(color).stroke({ color: "white", width: 2 });
     const labelSize = vertex.boundary === "inner" ? 21.6 : 24;
     vertexGroup.plain(String(vertex.label)).font({ family: options.numberFont ?? "'Newsreader Variable', Georgia, serif", size: labelSize, weight: 600 }).fill("#192333").attr({
       x: vertex.labelPoint.x, y: vertex.labelPoint.y, "text-anchor": "middle", "dominant-baseline": "middle",
@@ -186,7 +209,7 @@ export function renderAnnularDiagram(
     const hitHandles = initialPositions.map((position, index) => editorGroup.circle(18).center(position.x, position.y)
       .fill("none").stroke({ color: "#0f766e", width: 32, opacity: 0.001 })
       .addClass("curve-control-hit-target")
-      .attr({ "data-control-hit-index": String(index + 1), "vector-effect": "non-scaling-stroke", "pointer-events": "stroke" }));
+      .attr({ "aria-hidden": "true", "data-control-hit-index": String(index + 1), "vector-effect": "non-scaling-stroke", "pointer-events": "stroke" }));
     const handles = initialPositions.map((position, index) => editorGroup.circle(18).center(position.x, position.y)
       .fill("#fffdf9").stroke({ color: "#0f766e", width: 3 })
       .addClass("curve-control-handle")
@@ -225,10 +248,7 @@ export function renderAnnularDiagram(
       let dragging = false;
       let moved = false;
       const originalTheta = original[index + 1]?.theta ?? 0;
-      const moveTo = (point: Point): boolean => {
-        const contained = clampToAnnulus(point, routed.layout.center, routed.layout.innerRadius, routed.layout.outerRadius);
-        const cover = cartesianToCoverPoint(routed.layout, contained);
-        const next = Object.freeze({ theta: nearestLiftedAngle(cover.theta, originalTheta), u: cover.u });
+      const applyControl = (next: CoverCubicControlEdit["control1"]): boolean => {
         const current = index === 0 ? controls.control1 : controls.control2;
         if (Math.abs(next.theta - current.theta) <= 1e-12 && Math.abs(next.u - current.u) <= 1e-12) return false;
         controls = index === 0
@@ -237,11 +257,18 @@ export function renderAnnularDiagram(
         preview();
         return true;
       };
+      const moveTo = (point: Point): boolean => {
+        const contained = clampToAnnulus(point, routed.layout.center, routed.layout.innerRadius, routed.layout.outerRadius);
+        const cover = cartesianToCoverPoint(routed.layout, contained);
+        const next = Object.freeze({ theta: nearestLiftedAngle(cover.theta, originalTheta), u: cover.u });
+        return applyControl(next);
+      };
       for (const pointerTarget of [hitHandles[index]?.node, handle.node]) {
         if (!pointerTarget) continue;
         pointerTarget.addEventListener("pointerdown", (event) => {
           event.preventDefault(); event.stopPropagation(); dragging = true; moved = false;
           editorGroup.addClass("is-dragging");
+          callbacks.onCurvePreviewChange?.(true);
           try { pointerTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is optional in synthetic DOMs. */ }
         });
         pointerTarget.addEventListener("pointermove", (event) => {
@@ -253,13 +280,14 @@ export function renderAnnularDiagram(
           if (!dragging) return;
           dragging = false; editorGroup.removeClass("is-dragging");
           try { pointerTarget.releasePointerCapture(event.pointerId); } catch { /* See setPointerCapture above. */ }
-          if (moved) callbacks.onCurveEditCommit?.(editable.edge.id, controls);
-          else callbacks.onCurveEditCancel?.();
+          callbacks.onCurvePreviewChange?.(false);
+          if (moved) callbacks.onCurveEditCommit?.(editable.edge.id, controls, (index + 1) as 1 | 2);
         });
         const cancel = (): void => {
           if (!dragging) return;
           dragging = false; editorGroup.removeClass("is-dragging");
-          callbacks.onCurveEditCancel?.();
+          callbacks.onCurvePreviewChange?.(false);
+          callbacks.onCurveEditCancel?.((index + 1) as 1 | 2);
         };
         pointerTarget.addEventListener("pointercancel", cancel);
         pointerTarget.addEventListener("lostpointercapture", cancel);
@@ -274,14 +302,10 @@ export function renderAnnularDiagram(
         else if (event.key === "ArrowDown") next = Object.freeze({ ...current, u: Math.max(0.001, current.u - step) });
         else return;
         event.preventDefault(); event.stopPropagation();
-        controls = index === 0 ? Object.freeze({ ...controls, control1: next }) : Object.freeze({ ...controls, control2: next });
-        preview();
-        callbacks.onCurveEditCommit?.(editable.edge.id, controls, (index + 1) as 1 | 2);
+        if (applyControl(next)) callbacks.onCurveEditCommit?.(editable.edge.id, controls, (index + 1) as 1 | 2);
       });
     });
   }
-  draw.plain(`${model.notation}  ·  (p,q)=(${model.permutation.p},${model.permutation.q})`).font({ family: options.numberFont ?? "'Newsreader Variable', Georgia, serif", size: 20 }).fill("#607080").attr({
-    x: 500, y: 968, "text-anchor": "middle", "dominant-baseline": "middle",
-  });
+  renderCaption(draw, `${model.notation}  ·  (p,q)=(${model.permutation.p},${model.permutation.q})`, options.numberFont ?? "'Newsreader Variable', Georgia, serif");
   return { svg: draw.node, edges: routed.routes.map(({ edge }) => edge) };
 }

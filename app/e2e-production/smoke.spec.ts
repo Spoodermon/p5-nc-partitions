@@ -1,0 +1,30 @@
+import { readFile } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+
+test("the built Pages application loads its assets and worker, renders, and exports", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => { if (response.status() >= 400) errors.push(`${response.status()}: ${response.url()}`); });
+  await page.goto("./");
+  await expect(page.locator("#figure svg title")).toHaveText("(1 2) curved permutation diagram");
+  await page.getByRole("radio", { name: "Annular", exact: true }).check();
+  await page.locator("#annular-p").fill("2");
+  await page.locator("#annular-q").fill("2");
+  await page.locator("#annular-input").fill("(1 3)(2 4)");
+  const workerStarted = page.waitForEvent("worker");
+  await page.locator("#annular-form button[type=submit]").click();
+  const worker = await workerStarted;
+  expect(worker.url()).toContain("/p5-nc-partitions/assets/");
+  await expect(page.locator("#figure svg title")).toHaveText("(1 3)(2 4), annular permutation (2,2)");
+  await expect(page.locator("#routing-progress")).toBeHidden();
+  await page.locator("#export-button").focus();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-button").click();
+  const download = await downloadPromise;
+  const svg = await readFile((await download.path())!, "utf8");
+  expect(svg).toContain('vector-effect="non-scaling-stroke"');
+  expect(svg).toContain("data:font/woff2;base64,");
+  expect(svg).toContain("(1 3)(2 4)");
+  expect(svg).not.toContain("data-editor-overlay");
+  expect(errors).toEqual([]);
+});

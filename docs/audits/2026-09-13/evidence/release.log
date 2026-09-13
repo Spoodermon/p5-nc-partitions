@@ -1,0 +1,139 @@
+
+> permutation-visualizer@0.2.0 test:release
+> npm test && npm run test:slow && npm run test:browser && npm run benchmark && npm run test:exhaustive && npm run build && npm run test:production
+
+
+> permutation-visualizer@0.2.0 test
+> vitest run --exclude 'e2e/**' --exclude 'e2e-production/**' --exclude '**/*.slow.test.ts' --exclude '**/*.exhaustive.test.ts' --exclude '**/*.benchmark.test.ts'
+
+
+ RUN  v4.1.11 /Volumes/DevSSD/Projects/PermutationVisualizer/app
+
+
+ Test Files  28 passed (28)
+      Tests  231 passed (231)
+   Start at  12:17:32
+   Duration  12.80s (transform 2.42s, setup 0ms, import 3.71s, tests 50.05s, environment 2.89s)
+
+
+> permutation-visualizer@0.2.0 test:slow
+> vitest run tests/*.slow.test.ts
+
+
+ RUN  v4.1.11 /Volumes/DevSSD/Projects/PermutationVisualizer/app
+
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  12:17:45
+   Duration  4.17s (transform 104ms, setup 0ms, import 127ms, tests 3.99s, environment 0ms)
+
+
+> permutation-visualizer@0.2.0 test:browser
+> playwright test
+
+[WebServer] (node:75475) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+
+Running 26 tests using 1 worker
+
+(node:75499) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/26] e2e/annular-bezier-edit.spec.ts:3:1 › selected annular cubics expose draggable verified controls with undo
+[2/26] e2e/annular-bezier-edit.spec.ts:36:1 › outer and inner annular singleton loops expose genuine verified Bézier controls
+[3/26] e2e/annular-bezier-edit.spec.ts:56:1 › an invalid pointer release restores the exact prior curve
+[4/26] e2e/audit-regressions.spec.ts:11:1 › canonical block input is invariant across distinct valid orientations
+[5/26] e2e/audit-regressions.spec.ts:23:1 › annular syntax, crossing and routing errors survive cosmetic redraws
+[6/26] e2e/audit-regressions.spec.ts:45:1 › dense disc lanes remain visible and long captions fit live and exported SVGs
+[7/26] e2e/audit-regressions.spec.ts:86:1 › compact disc fallback stays explicit after display changes
+[8/26] e2e/audit-regressions.spec.ts:96:1 › pending routing stays responsive, can be cancelled, and can be superseded
+[9/26] e2e/disc-bezier-edit.spec.ts:4:1 › disc edges expose verified Bézier controls with undo and exact pinned anchors
+[10/26] e2e/disc-bezier-edit.spec.ts:43:1 › disc singleton loops expose the same two-control editor
+[11/26] e2e/disc-bezier-edit.spec.ts:55:1 › blank canvas clicks and Escape clear the selected edge without controls doing so
+[12/26] e2e/disc-bezier-edit.spec.ts:80:1 › Kr(π) remains inspectable but intentionally has no mutable control overlay
+[13/26] e2e/disc-bezier-edit.spec.ts:88:1 › pointer editing restores handle focus and never exposes an unverified preview to export
+[14/26] e2e/disc-bezier-edit.spec.ts:121:1 › disc edits persist across π and Kr(π), then Reset restores the admitted baseline
+[15/26] e2e/disc-bezier-edit.spec.ts:138:1 › invalid disc input remains announced after unrelated redraws
+[16/26] e2e/disc-two-cycle.spec.ts:5:1 › embedded disc two-cycles keep separate clickable edges and a genuine ribbon fill
+[17/26] e2e/random-anc.spec.ts:3:1 › Random ANC emits a strict connected annular-noncrossing permutation
+[18/26] e2e/random-anc.spec.ts:16:1 › Random ANC distribution defaults to sparse for large support until explicitly chosen
+[19/26] e2e/random-anc.spec.ts:29:1 › Random ANC can enforce a fixed-point-free result without relaxing the constraint
+[20/26] e2e/responsive.spec.ts:5:1 › annular controls remain distinct, contained, and stateful at every audited viewport
+[21/26] e2e/responsive.spec.ts:93:1 › disc support size stays compact at every audited viewport
+[22/26] e2e/settings-and-export.spec.ts:10:1 › surface choices use accessible topology icons and toolbar mathematics uses Geist Sans
+[23/26] e2e/settings-and-export.spec.ts:29:1 › successful renders stay quiet and the requested controls use borderless surfaces
+[24/26] e2e/settings-and-export.spec.ts:66:1 › diagram backgrounds are colourable and can be exported transparently
+[25/26] e2e/settings-and-export.spec.ts:93:1 › settings disclosures are initially closed and keyboard operable
+[26/26] e2e/settings-and-export.spec.ts:118:1 › each downloaded SVG embeds only the selected number font
+  26 passed (10.0s)
+
+> permutation-visualizer@0.2.0 benchmark
+> vitest run --disableConsoleIntercept tests/*.benchmark.test.ts
+
+
+ RUN  v4.1.11 /Volumes/DevSSD/Projects/PermutationVisualizer/app
+
+Benchmark disc-n400-two-block: 4.929 ms
+Benchmark ordinary-annular: 42.127 ms
+Benchmark mingo-nica: 42.951 ms
+Benchmark large-production: 80.104 ms
+Routing memory admitted-default: peak 195.8 MiB, baseline-to-peak 41.0 MiB, operation high-water 40.7 MiB, 19992 routes/499800 points, 260.5 ms
+Routing memory maximum-public-options: peak 124.7 MiB, baseline-to-peak 3.1 MiB, operation high-water 2.8 MiB, 21 routes/525 points, 9.4 ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  12:18:00
+   Duration  887ms (transform 139ms, setup 0ms, import 175ms, tests 973ms, environment 0ms)
+
+
+> permutation-visualizer@0.2.0 test:exhaustive
+> vitest run tests/*.exhaustive.test.ts
+
+
+ RUN  v4.1.11 /Volumes/DevSSD/Projects/PermutationVisualizer/app
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:18:01
+   Duration  10.33s (transform 98ms, setup 0ms, import 121ms, tests 10.15s, environment 0ms)
+
+
+> permutation-visualizer@0.2.0 build
+> tsc --noEmit && vite build && npm run verify:dist
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 65 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                           9.36 kB │ gzip:   2.48 kB
+dist/assets/annular.worker-B0adG4b4.js   63.69 kB
+dist/assets/index-x5hGQ7oc.css           12.95 kB │ gzip:   3.30 kB
+dist/assets/index-Dx0nCBHF.js           459.74 kB │ gzip: 255.03 kB
+
+✓ built in 85ms
+
+> permutation-visualizer@0.2.0 verify:dist
+> node scripts/verify-dist.mjs
+
+Verified production entry set and GitHub Pages asset base in dist/index.html
+
+> permutation-visualizer@0.2.0 test:production
+> playwright test --config playwright.production.config.ts
+
+[WebServer] (node:76212) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+
+Running 1 test using 1 worker
+
+(node:76230) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/1] e2e-production/smoke.spec.ts:4:1 › the built Pages application loads its assets and worker, renders, and exports
+  1 passed (1.2s)

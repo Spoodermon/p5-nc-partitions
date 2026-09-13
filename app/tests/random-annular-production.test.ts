@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { routeAnnularPermutation, type RoutedAnnularFailure } from "../src/geometry/annular-routing";
-import { annularPermutationToString, minimalConnectedAnnularNoncrossingPermutation, type AnnularPermutation } from "../src/math";
+import {
+  annularPermutationToString,
+  minimalConnectedAnnularNoncrossingPermutation,
+  minimalFixedPointFreeConnectedAnnularNoncrossingPermutation,
+  permutationCycles,
+  type AnnularPermutation,
+} from "../src/math";
 import { defaultAnnularRandomDensity, routeAwareRandomAnnularPermutation } from "../src/production/randomAnnular";
 
 function seeded(seed: number): () => number {
@@ -21,6 +27,10 @@ function boundedFailure(value: AnnularPermutation, reason: RoutedAnnularFailure[
       exhaustedResources: reason === "search-limit-exceeded" ? ["search-nodes"] : [],
     },
   };
+}
+
+function hasNoSingletonCycles(value: AnnularPermutation): boolean {
+  return permutationCycles(value.permutation).every((cycle) => cycle.length >= 2);
 }
 
 describe("route-aware random ANC", () => {
@@ -60,6 +70,77 @@ describe("route-aware random ANC", () => {
     });
     expect(terminal.ok).toBe(false);
     expect(terminalCalls).toBe(1);
+  });
+
+  it("never relaxes the singleton-free constraint across random candidates or fallback", () => {
+    const fallback = minimalFixedPointFreeConnectedAnnularNoncrossingPermutation(3, 2);
+    const fallbackKey = annularPermutationToString(fallback);
+    const routedCandidates: AnnularPermutation[] = [];
+    const result = routeAwareRandomAnnularPermutation(3, 2, "dense", () => 0, (value) => {
+      routedCandidates.push(value);
+      expect(hasNoSingletonCycles(value), annularPermutationToString(value)).toBe(true);
+      return annularPermutationToString(value) === fallbackKey
+        ? routeAnnularPermutation(value)
+        : boundedFailure(value);
+    }, { singletonCycles: "forbid" });
+
+    expect(result.ok).toBe(true);
+    expect(routedCandidates.length).toBeLessThanOrEqual(4);
+    expect(routedCandidates.length).toBeGreaterThanOrEqual(2);
+    expect(routedCandidates.every(hasNoSingletonCycles)).toBe(true);
+    if (!result.ok) return;
+    expect(result.usedMinimalFallback).toBe(true);
+    expect(result.attempts).toBe(routedCandidates.length);
+    expect(annularPermutationToString(result.permutation)).toBe(fallbackKey);
+  });
+
+  it("reports a rejected singleton-free random draw and the deterministic fallback separately", () => {
+    const fallback = minimalFixedPointFreeConnectedAnnularNoncrossingPermutation(4, 3);
+    const fallbackKey = annularPermutationToString(fallback);
+    const routedCandidates: AnnularPermutation[] = [];
+    const result = routeAwareRandomAnnularPermutation(4, 3, "balanced", () => 1 - Number.EPSILON, (value) => {
+      routedCandidates.push(value);
+      return annularPermutationToString(value) === fallbackKey
+        ? routeAnnularPermutation(value)
+        : boundedFailure(value);
+    }, { singletonCycles: "forbid" });
+
+    expect(result.ok).toBe(true);
+    expect(routedCandidates).toHaveLength(2);
+    expect(routedCandidates.every(hasNoSingletonCycles)).toBe(true);
+    expect(annularPermutationToString(routedCandidates[0] as AnnularPermutation)).not.toBe(fallbackKey);
+    if (!result.ok) return;
+    expect(result.attempts).toBe(2);
+    expect(result.usedMinimalFallback).toBe(true);
+    expect(result.density).toBe("sparse");
+    expect(annularPermutationToString(result.permutation)).toBe(fallbackKey);
+  });
+
+  it("keeps bounded all-failure and terminal behavior under the singleton-free constraint", () => {
+    const allFailureCandidates: AnnularPermutation[] = [];
+    const exhausted = routeAwareRandomAnnularPermutation(8, 5, "dense", seeded(4_209), (value) => {
+      allFailureCandidates.push(value);
+      return boundedFailure(value);
+    }, { singletonCycles: "forbid" });
+    expect(exhausted.ok).toBe(false);
+    if (exhausted.ok) throw new Error("expected bounded singleton-free routing attempts to fail");
+    expect(allFailureCandidates.length).toBeLessThanOrEqual(4);
+    expect(allFailureCandidates.length).toBeGreaterThan(0);
+    expect(allFailureCandidates.every(hasNoSingletonCycles)).toBe(true);
+    expect(exhausted.attempts).toBe(allFailureCandidates.length);
+    expect(exhausted.lastFailure?.reason).toBe("search-limit-exceeded");
+
+    const terminalCandidates: AnnularPermutation[] = [];
+    const terminal = routeAwareRandomAnnularPermutation(8, 5, "balanced", seeded(77), (value) => {
+      terminalCandidates.push(value);
+      return boundedFailure(value, "invalid-routing-options");
+    }, { singletonCycles: "forbid" });
+    expect(terminal.ok).toBe(false);
+    if (terminal.ok) throw new Error("expected terminal singleton-free routing failure");
+    expect(terminalCandidates).toHaveLength(1);
+    expect(terminalCandidates.every(hasNoSingletonCycles)).toBe(true);
+    expect(terminal.attempts).toBe(1);
+    expect(terminal.lastFailure?.reason).toBe("invalid-routing-options");
   });
 
   it("returns a routed genuine ANC on the previously exhausted large supports", () => {

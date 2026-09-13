@@ -7,6 +7,9 @@ import type { DiscPartition } from "./types";
 
 export type RandomSource = () => number;
 export type AnnularRandomDensity = "sparse" | "balanced" | "dense";
+export interface AnnularRandomConstraints {
+  readonly singletonCycles?: "allow" | "forbid";
+}
 
 interface BlockDensityProfile {
   readonly minimumInclusion: number;
@@ -19,6 +22,7 @@ const BLOCK_DENSITIES: Readonly<Record<AnnularRandomDensity, BlockDensityProfile
   dense: Object.freeze({ minimumInclusion: 0.52, maximumInclusion: 0.82 }),
 });
 const DISC_BLOCK_DENSITY = Object.freeze({ minimumInclusion: 0.18, maximumInclusion: 0.6 });
+const MAXIMUM_FIXED_POINT_FREE_STRUCTURE_ATTEMPTS = 8;
 
 function boundedRandom(random: RandomSource): number {
   const value = random();
@@ -42,6 +46,39 @@ function randomBlocksInInterval(
     const gapStart = (root[index] as number) + 1;
     const gapEnd = index + 1 < root.length ? (root[index + 1] as number) - 1 : end;
     blocks.push(...randomBlocksInInterval(gapStart, gapEnd, random, profile));
+  }
+  return blocks;
+}
+
+/**
+ * Partition one boundary into consecutive blocks without leaving a fixed
+ * point outside its root. The root may have size one because the outer and
+ * inner roots are merged into the through-cycle below; every later block has
+ * size at least two. Consecutive blocks are deliberately conservative here:
+ * they give the bounded rejection sampler a random, density-aware recovery
+ * path while preserving disc noncrossing on each boundary.
+ */
+function randomFixedPointFreeBoundaryBlocks(
+  start: number,
+  end: number,
+  random: RandomSource,
+  profile: BlockDensityProfile,
+): number[][] {
+  if (start > end) return [];
+  const blocks: number[][] = [];
+  let cursor = start;
+  while (cursor <= end) {
+    const remaining = end - cursor + 1;
+    const minimumSize = blocks.length === 0 ? 1 : 2;
+    if (remaining < minimumSize) throw new Error("Fixed-point-free boundary block invariant failed");
+    const inclusion = profile.minimumInclusion
+      + boundedRandom(random) * (profile.maximumInclusion - profile.minimumInclusion);
+    let size = minimumSize;
+    while (size < remaining && boundedRandom(random) < inclusion) size += 1;
+    // A trailing singleton cannot become a non-root block, so absorb it.
+    if (remaining - size === 1) size += 1;
+    blocks.push(Array.from({ length: size }, (_, index) => cursor + index));
+    cursor += size;
   }
   return blocks;
 }
@@ -83,21 +120,50 @@ export function randomConnectedAnnularNoncrossingPermutation(
   q: number,
   random: RandomSource = Math.random,
   density: AnnularRandomDensity = "balanced",
+  constraints: AnnularRandomConstraints = {},
 ): AnnularPermutation {
   if (!Number.isSafeInteger(p) || p < 1 || !Number.isSafeInteger(q) || q < 1 || p > INPUT_LIMITS.annularP || q > INPUT_LIMITS.annularQ || p + q > INPUT_LIMITS.annularTotalSupport) {
     throw new RangeError("p and q exceed the supported annular limits");
   }
   if (!Object.hasOwn(BLOCK_DENSITIES, density)) throw new RangeError("unknown annular random density");
+  const singletonCycles = constraints.singletonCycles ?? "allow";
+  if (singletonCycles !== "allow" && singletonCycles !== "forbid") throw new RangeError("unknown singleton-cycle constraint");
   const profile = BLOCK_DENSITIES[density];
-  const outer = randomBlocksInInterval(1, p, random, profile);
-  const inner = randomBlocksInInterval(p + 1, p + q, random, profile);
+
+  const drawCandidate = (): AnnularPermutation | null => {
+    const outer = randomBlocksInInterval(1, p, random, profile);
+    const inner = randomBlocksInInterval(p + 1, p + q, random, profile);
+    const blocks = [[...(outer[0] ?? []), ...(inner[0] ?? [])], ...outer.slice(1), ...inner.slice(1)];
+    if (singletonCycles === "forbid" && blocks.some((block) => block.length < 2)) return null;
+    const notation = blocks.sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)).map((block) => `(${block.join(" ")})`).join("");
+    const parsed = parseAnnularPermutation(notation, p, q);
+    if (!parsed.ok) throw new Error(`Random annular permutation invariant failed: ${parsed.error.kind}`);
+    const analysis = analyzeAnnularNoncrossing(parsed.value);
+    if (!analysis.connected || !analysis.isNoncrossing) {
+      throw new Error("Random annular permutation invariant failed: expected a connected annular-noncrossing permutation");
+    }
+    return parsed.value;
+  };
+
+  const maximumDraws = singletonCycles === "forbid" ? MAXIMUM_FIXED_POINT_FREE_STRUCTURE_ATTEMPTS : 1;
+  for (let draw = 0; draw < maximumDraws; draw += 1) {
+    const candidate = drawCandidate();
+    if (candidate) return candidate;
+  }
+
+  // Rejection can be common on large supports. Recover with a genuinely
+  // random candidate from the requested density rather than silently using
+  // the deterministic production fallback (which is reported separately by
+  // routeAwareRandomAnnularPermutation).
+  const outer = randomFixedPointFreeBoundaryBlocks(1, p, random, profile);
+  const inner = randomFixedPointFreeBoundaryBlocks(p + 1, p + q, random, profile);
   const blocks = [[...(outer[0] ?? []), ...(inner[0] ?? [])], ...outer.slice(1), ...inner.slice(1)];
   const notation = blocks.sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)).map((block) => `(${block.join(" ")})`).join("");
   const parsed = parseAnnularPermutation(notation, p, q);
-  if (!parsed.ok) throw new Error(`Random annular permutation invariant failed: ${parsed.error.kind}`);
+  if (!parsed.ok) throw new Error(`Random fixed-point-free annular permutation invariant failed: ${parsed.error.kind}`);
   const analysis = analyzeAnnularNoncrossing(parsed.value);
-  if (!analysis.connected || !analysis.isNoncrossing) {
-    throw new Error("Random annular permutation invariant failed: expected a connected annular-noncrossing permutation");
+  if (!analysis.connected || !analysis.isNoncrossing || blocks.some((block) => block.length < 2)) {
+    throw new Error("Random fixed-point-free annular permutation invariant failed");
   }
   return parsed.value;
 }
@@ -112,5 +178,29 @@ export function minimalConnectedAnnularNoncrossingPermutation(p: number, q: numb
   if (!parsed.ok) throw new Error(`Minimal annular permutation invariant failed: ${parsed.error.kind}`);
   const analysis = analyzeAnnularNoncrossing(parsed.value);
   if (!analysis.connected || !analysis.isNoncrossing) throw new Error("Minimal annular permutation invariant failed");
+  return parsed.value;
+}
+
+/**
+ * A low-complexity connected ANC with no fixed points. Boundary roots have
+ * parity-matched sizes, so every remaining boundary label forms a consecutive
+ * transposition and the merged through-cycle has size 2–4.
+ */
+export function minimalFixedPointFreeConnectedAnnularNoncrossingPermutation(p: number, q: number): AnnularPermutation {
+  if (!Number.isSafeInteger(p) || p < 1 || !Number.isSafeInteger(q) || q < 1 || p > INPUT_LIMITS.annularP || q > INPUT_LIMITS.annularQ || p + q > INPUT_LIMITS.annularTotalSupport) {
+    throw new RangeError("p and q exceed the supported annular limits");
+  }
+  const outerRootSize = p % 2 === 0 ? 2 : 1;
+  const innerRootSize = q % 2 === 0 ? 2 : 1;
+  const outerRoot = Array.from({ length: outerRootSize }, (_, index) => index + 1);
+  const innerRoot = Array.from({ length: innerRootSize }, (_, index) => p + index + 1);
+  const blocks: number[][] = [[...outerRoot, ...innerRoot]];
+  for (let label = outerRootSize + 1; label <= p; label += 2) blocks.push([label, label + 1]);
+  for (let label = p + innerRootSize + 1; label <= p + q; label += 2) blocks.push([label, label + 1]);
+  const notation = blocks.sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)).map((block) => `(${block.join(" ")})`).join("");
+  const parsed = parseAnnularPermutation(notation, p, q);
+  if (!parsed.ok) throw new Error(`Fixed-point-free annular fallback invariant failed: ${parsed.error.kind}`);
+  const analysis = analyzeAnnularNoncrossing(parsed.value);
+  if (!analysis.connected || !analysis.isNoncrossing) throw new Error("Fixed-point-free annular fallback invariant failed");
   return parsed.value;
 }

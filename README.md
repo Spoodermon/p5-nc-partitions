@@ -4,7 +4,7 @@ An interactive visualization tool for generating and exporting non-crossing disc
 
 This project helps study the combinatorics underlying free probability, and to explore/study these objects and their Kreweras complements.
 
-Enter your own partition or permutation, or generate one at random. Inspect its Kreweras complement, adjust the diagram, and export it as an SVG for use in mathematical work.
+Enter your own partition or permutation, or generate one at random. Inspect its Kreweras complement, adjust the diagram, and export it as an SVG.
 
 ## Examples
 
@@ -15,7 +15,7 @@ The following figures were generated and exported directly from the application.
 | [<img src="docs/examples/disc-nc.png" width="420" alt="Non-crossing disc partition with blocks of sizes one, two, three, and four">](docs/examples/disc-nc.svg) | [<img src="docs/examples/annular-nc.png" width="420" alt="Non-crossing annular permutation with three cycles joining the boundaries and one fixed point">](docs/examples/annular-nc.svg) |
 | `(1 4)(2 3)(5 7 8 12)(6)(9 10 11)` | `(1 8)(2)(3 4 7)(5 6)` |
 
-Select either figure to open its SVG.
+
 
 ## Disc input
 

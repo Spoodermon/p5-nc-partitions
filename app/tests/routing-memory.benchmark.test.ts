@@ -5,13 +5,13 @@ import { spawnSync } from "node:child_process";
 declare const process: { readonly execPath: string };
 
 const MEBIBYTE = 1024 * 1024;
-// The isolated Vite/Node worker has a substantial baseline of its own. A
-// 64 MiB routing allowance leaves allocator/runner headroom while still
+// Compile in a separate process so the isolated worker measures routing, not
+// Vite's platform-dependent loader. A 64 MiB routing allowance leaves headroom while
 // catching the prior 88/291 MiB routing regressions.
 const MAXIMUM_PEAK_RSS = 256 * MEBIBYTE;
 const MAXIMUM_BASELINE_TO_PEAK_GROWTH = 96 * MEBIBYTE;
 const MAXIMUM_OPERATION_HIGH_WATER_GROWTH = 64 * MEBIBYTE;
-const worker = decodeURIComponent(new URL("../scripts/routing-memory-worker.mjs", import.meta.url).pathname);
+const worker = decodeURIComponent(new URL("../scripts/routing-memory-runner.mjs", import.meta.url).pathname);
 const appRoot = decodeURIComponent(new URL("../", import.meta.url).pathname);
 
 interface MemoryReport {
@@ -46,7 +46,7 @@ interface MemoryReport {
 }
 
 function runScenario(scenario: string): MemoryReport {
-  const child = spawnSync(process.execPath, ["--expose-gc", worker, scenario], {
+  const child = spawnSync(process.execPath, [worker, scenario], {
     cwd: appRoot,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,

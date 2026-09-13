@@ -1,5 +1,4 @@
-import { fileURLToPath } from "node:url";
-import { createServer } from "vite";
+import { pathToFileURL } from "node:url";
 
 const MEBIBYTE = 1024 * 1024;
 
@@ -31,8 +30,8 @@ function collectGarbage() {
   if (typeof globalThis.gc !== "function") {
     throw new Error("routing-memory-worker must run under Node with --expose-gc");
   }
-  // Two collections release both newly unreachable module-loader objects and
-  // weak references queued by the first collection before taking the baseline.
+  // Two collections release temporary module initialization objects and weak
+  // references queued by the first collection before taking the baseline.
   globalThis.gc();
   globalThis.gc();
 }
@@ -43,35 +42,15 @@ if (!scenario) {
   throw new Error(`Unknown routing memory scenario: ${scenarioName ?? "<missing>"}`);
 }
 
-const appRoot = fileURLToPath(new URL("../", import.meta.url));
-const server = await createServer({
-  appType: "custom",
-  clearScreen: false,
-  configFile: fileURLToPath(new URL("../vite.config.ts", import.meta.url)),
-  logLevel: "silent",
-  root: appRoot,
-  server: { middlewareMode: true },
-});
-
-let math;
-let routing;
-let routingPolicy;
-try {
-  [math, routing, routingPolicy] = await Promise.all([
-    server.ssrLoadModule("/src/math/index.ts"),
-    server.ssrLoadModule("/src/geometry/annular-routing/index.ts"),
-    server.ssrLoadModule("/src/config/routingPolicy.ts"),
-  ]);
-} finally {
-  await server.close();
-}
-
-const parsed = math.parseAnnularPermutation(scenario.notation, scenario.p, scenario.q);
+const bundle = process.argv[3];
+if (!bundle) throw new Error("routing-memory-worker requires a compiled routing module");
+const { parseAnnularPermutation, routeAnnularPermutation, ROUTING_POLICY } = await import(pathToFileURL(bundle).href);
+const parsed = parseAnnularPermutation(scenario.notation, scenario.p, scenario.q);
 if (!parsed.ok) {
   throw new Error(`Memory fixture was not admitted: ${parsed.error.kind}`);
 }
 
-const policy = routingPolicy.ROUTING_POLICY;
+const policy = ROUTING_POLICY;
 const options = scenario.options(policy);
 if (scenarioName === "maximum-public-options" && !Number.isInteger(options.maxCandidatesPerEdge)) {
   throw new Error("ROUTING_POLICY.maximumCandidatesPerEdge must be an integer");
@@ -81,7 +60,7 @@ collectGarbage();
 const baselineRssBytes = process.memoryUsage().rss;
 const baselineMaximumRssBytes = maximumRssBytes();
 const started = performance.now();
-const result = routing.routeAnnularPermutation(parsed.value, options);
+const result = routeAnnularPermutation(parsed.value, options);
 const elapsedMilliseconds = performance.now() - started;
 const rssAfterRouteBytes = process.memoryUsage().rss;
 const peakRssBytes = maximumRssBytes();

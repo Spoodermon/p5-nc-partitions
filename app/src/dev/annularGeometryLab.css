@@ -1,0 +1,94 @@
+:root {
+  color: #172033;
+  background: #eef1f4;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.lab-shell {
+  width: min(1060px, 100%);
+  margin: 0 auto;
+  padding: clamp(14px, 3vw, 32px);
+}
+
+.lab-shell header {
+  margin-bottom: 14px;
+}
+
+.lab-shell h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+.lab-shell p {
+  margin: 6px 0 0;
+  color: #52606e;
+  font-size: 14px;
+}
+
+.math {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.lab-card {
+  overflow: hidden;
+  border: 1px solid #d6dde4;
+  border-radius: 18px;
+  background: #fffdf9;
+  box-shadow: 0 12px 30px rgb(23 32 51 / 8%);
+}
+
+.lab-figure {
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1;
+}
+
+.lab-figure svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lab-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px 18px;
+  margin: 14px 0 0;
+  padding: 0;
+  color: #52606e;
+  font-size: 12px;
+  list-style: none;
+}
+
+.lab-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lab-legend i {
+  width: 22px;
+  height: 3px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--swatch);
+}
